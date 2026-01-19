@@ -474,14 +474,18 @@ class GeoEdgeEmailReporter:
             
             # Adjust subject line based on whether there are recent changes
             if not recent_accounts:
-                subject = f"✅ GeoEdge Monitor - No Changes Detected ({date_str})"
+                subject = f"✅ GeoEdge Project Config Monitor - No Changes Detected ({date_str})"
             elif status == "success":
                 if projects_reset > 0:
-                    subject = f"🔧 GeoEdge Daily Reset - {projects_reset} Projects Updated ({date_str})"
+                    priority_count = len([acc for acc in recent_accounts if "PRIORITY" in acc.get("status", "")])
+                    if priority_count > 0:
+                        subject = f"🚨 GeoEdge Project Config Monitor - {priority_count} Priority Alerts ({projects_reset} Projects Reset) ({date_str})"
+                    else:
+                        subject = f"🔧 GeoEdge Project Config Monitor - {projects_reset} Projects Reset ({date_str})"
                 else:
-                    subject = f"✅ GeoEdge Daily Reset - All Projects Configured ({date_str})"
+                    subject = f"✅ GeoEdge Project Config Monitor - All Accounts Properly Configured ({date_str})"
             else:
-                subject = f"❌ GeoEdge Daily Reset - Error ({date_str})"
+                subject = f"❌ GeoEdge Project Config Monitor - System Error Detected ({date_str})"
             
             csv_filename = f"geoedge_reset_report_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M')}.csv"
             
