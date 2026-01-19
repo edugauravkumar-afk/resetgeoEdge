@@ -1,0 +1,46 @@
+# Ignore environment files
+.env
+.env.local
+.env.production
+
+# Ignore Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+.cache/
+
+# Ignore log files
+*.log
+logs/
+
+# Ignore Excel/CSV reports
+*.xlsx
+*.csv
+*.json
+!requirements.txt
+!package.json
+
+# Ignore IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Ignore OS files
+.DS_Store
+Thumbs.db
+
+# Ignore virtual environments
+.venv/
+venv/
+env/
+
+# Ignore embedded git repositories (subprojects)
+LP_Alerts_24H/
+LP_Daily_Alerts/
+geoEdgeScanningUpdate/
+Daily_Alert/
+
+# Ignore temporary files
+*.tmp
+*.temp

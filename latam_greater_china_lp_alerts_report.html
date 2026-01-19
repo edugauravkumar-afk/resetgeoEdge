@@ -1,0 +1,620 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LATAM & Greater China LP Alerts Report (24h)</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 40px 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 40px 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            font-size: 1.1em;
+            opacity: 0.95;
+        }
+
+        .timestamp {
+            font-size: 0.9em;
+            opacity: 0.8;
+            margin-top: 10px;
+        }
+
+        .summary-section {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            padding: 30px;
+            background: #f8f9fa;
+            border-bottom: 1px solid #e9ecef;
+        }
+
+        .summary-card {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            text-align: center;
+        }
+
+        .summary-card .number {
+            font-size: 2.5em;
+            font-weight: bold;
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+
+        .summary-card .label {
+            color: #666;
+            font-size: 0.95em;
+        }
+
+        .latam-card .number {
+            color: #28a745;
+        }
+
+        .china-card .number {
+            color: #dc3545;
+        }
+
+        .total-card .number {
+            color: #667eea;
+        }
+
+        .filters-section {
+            padding: 30px;
+            background: white;
+            border-bottom: 1px solid #e9ecef;
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .filters-section input,
+        .filters-section select {
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 0.95em;
+        }
+
+        .filters-section button {
+            padding: 8px 16px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.95em;
+            transition: background 0.3s;
+        }
+
+        .filters-section button:hover {
+            background: #764ba2;
+        }
+
+        .table-section {
+            padding: 30px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+
+        thead {
+            background: #f8f9fa;
+            border-bottom: 2px solid #667eea;
+        }
+
+        th {
+            padding: 15px;
+            text-align: left;
+            font-weight: 600;
+            color: #333;
+            font-size: 0.95em;
+        }
+
+        td {
+            padding: 12px 15px;
+            border-bottom: 1px solid #e9ecef;
+            font-size: 0.9em;
+        }
+
+        tbody tr:hover {
+            background: #f8f9fa;
+        }
+
+        .region-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.85em;
+            font-weight: 600;
+        }
+
+        .region-latam {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .region-china {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .country-code {
+            font-weight: 600;
+            font-family: 'Courier New', monospace;
+        }
+
+        .locations {
+            color: #666;
+            font-size: 0.85em;
+        }
+
+        .pagination {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            padding: 20px;
+            flex-wrap: wrap;
+        }
+
+        .pagination button {
+            padding: 6px 12px;
+            border: 1px solid #ddd;
+            background: white;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .pagination button:hover {
+            background: #667eea;
+            color: white;
+            border-color: #667eea;
+        }
+
+        .pagination button.active {
+            background: #667eea;
+            color: white;
+            border-color: #667eea;
+        }
+
+        .pagination button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .footer {
+            background: #f8f9fa;
+            padding: 20px 30px;
+            text-align: center;
+            color: #666;
+            font-size: 0.9em;
+            border-top: 1px solid #e9ecef;
+        }
+
+        .stats-bar {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 20px;
+            padding: 20px 30px;
+            background: white;
+            border-bottom: 1px solid #e9ecef;
+        }
+
+        .stat-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .stat-item .label {
+            color: #666;
+            font-size: 0.9em;
+        }
+
+        .stat-item .value {
+            font-size: 1.5em;
+            font-weight: bold;
+            color: #667eea;
+        }
+
+        @media (max-width: 768px) {
+            .header h1 {
+                font-size: 1.8em;
+            }
+
+            .summary-section {
+                grid-template-columns: 1fr;
+            }
+
+            .filters-section {
+                flex-direction: column;
+                align-items: stretch;
+            }
+
+            .filters-section input,
+            .filters-section select,
+            .filters-section button {
+                width: 100%;
+            }
+
+            table {
+                font-size: 0.85em;
+            }
+
+            th, td {
+                padding: 10px;
+            }
+        }
+
+        .no-data {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+
+        .export-section {
+            padding: 20px 30px;
+            background: white;
+            border-bottom: 1px solid #e9ecef;
+            display: flex;
+            gap: 10px;
+        }
+
+        .export-section button {
+            padding: 8px 16px;
+            background: #28a745;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.95em;
+            transition: background 0.3s;
+        }
+
+        .export-section button:hover {
+            background: #218838;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <h1>🌍 LATAM & Greater China LP Alerts Report</h1>
+            <p>Landing Page Alerts for English-Targeting Campaigns (Last 24 Hours)</p>
+            <div class="timestamp" id="timestamp"></div>
+        </div>
+
+        <!-- Summary Cards -->
+        <div class="summary-section">
+            <div class="summary-card latam-card">
+                <div class="number" id="latam-count">8</div>
+                <div class="label">LATAM Accounts</div>
+            </div>
+            <div class="summary-card china-card">
+                <div class="number" id="china-count">34</div>
+                <div class="label">Greater China Accounts</div>
+            </div>
+            <div class="summary-card total-card">
+                <div class="number" id="total-count">42</div>
+                <div class="label">Total Alerts</div>
+            </div>
+        </div>
+
+        <!-- Stats Bar -->
+        <div class="stats-bar">
+            <div class="stat-item">
+                <span class="label">Campaign ID Coverage:</span>
+                <span class="value" id="campaigns-count">42</span>
+            </div>
+            <div class="stat-item">
+                <span class="label">Unique Countries:</span>
+                <span class="value" id="countries-count">5</span>
+            </div>
+            <div class="stat-item">
+                <span class="label">Brazil (BR):</span>
+                <span class="value" id="brazil-count">8</span>
+            </div>
+            <div class="stat-item">
+                <span class="label">Hong Kong (HK):</span>
+                <span class="value" id="hongkong-count">34</span>
+            </div>
+        </div>
+
+        <!-- Filters & Export -->
+        <div class="filters-section">
+            <input type="text" id="searchInput" placeholder="Search Account ID, Campaign ID...">
+            <select id="regionFilter">
+                <option value="">All Regions</option>
+                <option value="LATAM">LATAM</option>
+                <option value="Greater China">Greater China</option>
+            </select>
+            <select id="countryFilter">
+                <option value="">All Countries</option>
+                <option value="BR">Brazil</option>
+                <option value="HK">Hong Kong</option>
+                <option value="CN">China</option>
+            </select>
+            <button onclick="clearFilters()">Clear Filters</button>
+        </div>
+
+        <!-- Export Section -->
+        <div class="export-section">
+            <button onclick="exportCSV()">📥 Export as CSV</button>
+            <button onclick="exportJSON()">📤 Export as JSON</button>
+            <button onclick="printReport()">🖨️ Print Report</button>
+        </div>
+
+        <!-- Table Section -->
+        <div class="table-section">
+            <h3>Account Details</h3>
+            <div id="tableContainer"></div>
+            <div class="pagination" id="pagination"></div>
+        </div>
+
+        <!-- Footer -->
+        <div class="footer">
+            <p>Generated on <span id="footer-date"></span> | GeoEdge LATAM & Greater China Monitoring System</p>
+        </div>
+    </div>
+
+    <script>
+        // Sample data - will be populated from CSV
+        const allData = [
+            {account_id: "1343639", country: "CN", region: "Greater China", campaign_id: "46193778", locations: "AU,US,CA"},
+            {account_id: "1535322", country: "HK", region: "Greater China", campaign_id: "47581302", locations: "US"},
+            {account_id: "1541269", country: "HK", region: "Greater China", campaign_id: "47567158", locations: "US"},
+            {account_id: "1541269", country: "HK", region: "Greater China", campaign_id: "47566475", locations: "US"},
+            {account_id: "1541269", country: "HK", region: "Greater China", campaign_id: "47567189", locations: "US"},
+            {account_id: "1541883", country: "HK", region: "Greater China", campaign_id: "47424765", locations: "US"},
+            {account_id: "1541883", country: "HK", region: "Greater China", campaign_id: "47423449", locations: "US"},
+            {account_id: "1642145", country: "HK", region: "Greater China", campaign_id: "47262177", locations: "US"},
+            {account_id: "1642303", country: "HK", region: "Greater China", campaign_id: "33630485", locations: "US"},
+            {account_id: "1642303", country: "HK", region: "Greater China", campaign_id: "46365640", locations: "US"},
+            {account_id: "1682991", country: "HK", region: "Greater China", campaign_id: "47154322", locations: "US"},
+            {account_id: "1717710", country: "HK", region: "Greater China", campaign_id: "47269621", locations: "US"},
+            {account_id: "1726585", country: "HK", region: "Greater China", campaign_id: "47119088", locations: "US"},
+            {account_id: "1762000", country: "HK", region: "Greater China", campaign_id: "47595414", locations: "US"},
+            {account_id: "1769384", country: "HK", region: "Greater China", campaign_id: "47480770", locations: "US"},
+            {account_id: "1778035", country: "HK", region: "Greater China", campaign_id: "47567273", locations: "US"},
+            {account_id: "1780845", country: "HK", region: "Greater China", campaign_id: "47564581", locations: "GB"},
+            {account_id: "1792640", country: "HK", region: "Greater China", campaign_id: "47443365", locations: "GB,US"},
+            {account_id: "1811488", country: "HK", region: "Greater China", campaign_id: "47390151", locations: "US"},
+            {account_id: "1822556", country: "BR", region: "LATAM", campaign_id: "47403529", locations: "US"},
+            {account_id: "1902030", country: "BR", region: "LATAM", campaign_id: "47492180", locations: "BR,IN,CA"},
+            {account_id: "1938617", country: "BR", region: "LATAM", campaign_id: "47376560", locations: "US"},
+            {account_id: "1947326", country: "BR", region: "LATAM", campaign_id: "47611837", locations: "US"},
+            {account_id: "1947326", country: "BR", region: "LATAM", campaign_id: "47611847", locations: "US"},
+            {account_id: "1959608", country: "BR", region: "LATAM", campaign_id: "47529299", locations: "US"},
+            {account_id: "1960294", country: "BR", region: "LATAM", campaign_id: "47562711", locations: "US"},
+            {account_id: "1962213", country: "BR", region: "LATAM", campaign_id: "47588840", locations: "US"},
+        ];
+
+        let filteredData = [...allData];
+        let currentPage = 1;
+        const itemsPerPage = 10;
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            updateTimestamp();
+            calculateStats();
+            renderTable();
+            setupEventListeners();
+        });
+
+        function updateTimestamp() {
+            const now = new Date();
+            document.getElementById('timestamp').textContent = `Report Generated: ${now.toLocaleString()}`;
+            document.getElementById('footer-date').textContent = now.toLocaleString();
+        }
+
+        function calculateStats() {
+            const latamCount = allData.filter(d => d.region === 'LATAM').length;
+            const chinaCount = allData.filter(d => d.region === 'Greater China').length;
+            const uniqueCountries = new Set(allData.map(d => d.country)).size;
+            const brazilCount = allData.filter(d => d.country === 'BR').length;
+            const hongkongCount = allData.filter(d => d.country === 'HK').length;
+            const uniqueCampaigns = new Set(allData.map(d => d.campaign_id)).size;
+
+            document.getElementById('latam-count').textContent = latamCount;
+            document.getElementById('china-count').textContent = chinaCount;
+            document.getElementById('total-count').textContent = allData.length;
+            document.getElementById('campaigns-count').textContent = uniqueCampaigns;
+            document.getElementById('countries-count').textContent = uniqueCountries;
+            document.getElementById('brazil-count').textContent = brazilCount;
+            document.getElementById('hongkong-count').textContent = hongkongCount;
+        }
+
+        function setupEventListeners() {
+            document.getElementById('searchInput').addEventListener('input', (e) => {
+                const searchTerm = e.target.value.toLowerCase();
+                filteredData = allData.filter(item => 
+                    item.account_id.includes(searchTerm) || 
+                    item.campaign_id.includes(searchTerm)
+                );
+                currentPage = 1;
+                renderTable();
+            });
+
+            document.getElementById('regionFilter').addEventListener('change', (e) => {
+                const region = e.target.value;
+                filteredData = allData.filter(item => 
+                    region === '' || item.region === region
+                );
+                currentPage = 1;
+                renderTable();
+            });
+
+            document.getElementById('countryFilter').addEventListener('change', (e) => {
+                const country = e.target.value;
+                filteredData = allData.filter(item => 
+                    country === '' || item.country === country
+                );
+                currentPage = 1;
+                renderTable();
+            });
+        }
+
+        function renderTable() {
+            const start = (currentPage - 1) * itemsPerPage;
+            const end = start + itemsPerPage;
+            const paginatedData = filteredData.slice(start, end);
+
+            let html = '<table>';
+            html += '<thead><tr>';
+            html += '<th>Account ID</th>';
+            html += '<th>Country</th>';
+            html += '<th>Region</th>';
+            html += '<th>Campaign ID</th>';
+            html += '<th>Target Locations</th>';
+            html += '</tr></thead>';
+            html += '<tbody>';
+
+            if (paginatedData.length === 0) {
+                html += '<tr><td colspan="5" class="no-data">No data found</td></tr>';
+            } else {
+                paginatedData.forEach(item => {
+                    const regionBadgeClass = item.region === 'LATAM' ? 'region-latam' : 'region-china';
+                    const regionBadgeText = item.region === 'LATAM' ? '🌎 LATAM' : '🏮 Greater China';
+                    html += '<tr>';
+                    html += `<td><strong>${item.account_id}</strong></td>`;
+                    html += `<td><span class="country-code">${item.country}</span></td>`;
+                    html += `<td><span class="region-badge ${regionBadgeClass}">${regionBadgeText}</span></td>`;
+                    html += `<td>${item.campaign_id}</td>`;
+                    html += `<td><span class="locations">${item.locations}</span></td>`;
+                    html += '</tr>';
+                });
+            }
+
+            html += '</tbody></table>';
+            document.getElementById('tableContainer').innerHTML = html;
+
+            renderPagination();
+        }
+
+        function renderPagination() {
+            const totalPages = Math.ceil(filteredData.length / itemsPerPage);
+            let html = '';
+
+            if (totalPages <= 1) {
+                document.getElementById('pagination').innerHTML = '';
+                return;
+            }
+
+            html += `<button ${currentPage === 1 ? 'disabled' : ''} onclick="previousPage()">← Previous</button>`;
+
+            for (let i = 1; i <= totalPages; i++) {
+                if (i === currentPage) {
+                    html += `<button class="active">${i}</button>`;
+                } else if (i <= 3 || i > totalPages - 3 || Math.abs(i - currentPage) <= 1) {
+                    html += `<button onclick="goToPage(${i})">${i}</button>`;
+                } else if (i === 4 || i === totalPages - 3) {
+                    html += `<button disabled>...</button>`;
+                }
+            }
+
+            html += `<button ${currentPage === totalPages ? 'disabled' : ''} onclick="nextPage()">Next →</button>`;
+            document.getElementById('pagination').innerHTML = html;
+        }
+
+        function previousPage() {
+            if (currentPage > 1) {
+                currentPage--;
+                renderTable();
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            }
+        }
+
+        function nextPage() {
+            const totalPages = Math.ceil(filteredData.length / itemsPerPage);
+            if (currentPage < totalPages) {
+                currentPage++;
+                renderTable();
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            }
+        }
+
+        function goToPage(page) {
+            currentPage = page;
+            renderTable();
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        function clearFilters() {
+            document.getElementById('searchInput').value = '';
+            document.getElementById('regionFilter').value = '';
+            document.getElementById('countryFilter').value = '';
+            filteredData = [...allData];
+            currentPage = 1;
+            renderTable();
+        }
+
+        function exportCSV() {
+            let csv = 'Account ID,Country,Region,Campaign ID,Target Locations\n';
+            allData.forEach(item => {
+                csv += `${item.account_id},${item.country},${item.region},${item.campaign_id},"${item.locations}"\n`;
+            });
+
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'latam_greater_china_lp_alerts_24h.csv';
+            a.click();
+            window.URL.revokeObjectURL(url);
+        }
+
+        function exportJSON() {
+            const json = JSON.stringify(allData, null, 2);
+            const blob = new Blob([json], { type: 'application/json' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'latam_greater_china_lp_alerts_24h.json';
+            a.click();
+            window.URL.revokeObjectURL(url);
+        }
+
+        function printReport() {
+            window.print();
+        }
+    </script>
+</body>
+</html>
