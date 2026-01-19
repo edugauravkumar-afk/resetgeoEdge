@@ -49,6 +49,37 @@ def check_email_config():
     return True
 
 
+def send_test_email_no_changes():
+    """Send a test email showing no changes in last 24 hours"""
+    try:
+        from email_reporter import GeoEdgeEmailReporter
+        
+        print("\n📧 Sending test email (NO CHANGES scenario)...")
+        
+        # Test data showing no recent changes
+        test_data = {
+            "total_accounts_checked": 0,  # No accounts processed
+            "total_projects_reset": 0,   # No projects reset
+            "execution_time": 5.2,
+            "priority_reset_performed": False,
+            "newly_inactive_count": 0,
+            "accounts_reset": []  # Empty - no changes
+        }
+        
+        reporter = GeoEdgeEmailReporter()
+        success = reporter.send_daily_reset_report(test_data)
+        
+        if success:
+            print("✅ Test email (no changes) sent successfully!")
+            return True
+        else:
+            print("❌ Failed to send test email (no changes)")
+            return False
+            
+    except Exception as e:
+        print(f"❌ Error sending test email: {e}")
+        return False
+        
 def send_test_email():
     """Send a test email to verify the configuration works"""
     try:
@@ -56,32 +87,21 @@ def send_test_email():
         
         print("\n📧 Sending test email...")
         
-        # Create realistic sample report data
+        # Create enhanced sample data showing ONLY last 24 hours changes
         test_data = {
-            "total_accounts_checked": 97,
-            "inactive_accounts": 4,
-            "active_accounts": 93, 
-            "total_projects_scanned": 1025,
-            "projects_reset": 0,
-            "execution_time": 42.5,
-            "status": "success",
-            "inactive_account_details": [
-                {"account_id": "1290644", "status": "INACTIVE", "project_count": 150, "changes_made": 0, "auto_scan": 0, "scans_per_day": 0},
-                {"account_id": "1466060", "status": "INACTIVE", "project_count": 200, "changes_made": 0, "auto_scan": 0, "scans_per_day": 0},
-                {"account_id": "1835770", "status": "INACTIVE", "project_count": 125, "changes_made": 0, "auto_scan": 0, "scans_per_day": 0},
-                {"account_id": "1623554", "status": "INACTIVE", "project_count": 178, "changes_made": 0, "auto_scan": 0, "scans_per_day": 0},
-            ],
-            "active_account_details": [
-                {"account_id": "1787788", "status": "ACTIVE", "project_count": 1, "changes_made": 0, "auto_scan": 1, "scans_per_day": 72},
-                {"account_id": "1798665", "status": "ACTIVE", "project_count": 1, "changes_made": 0, "auto_scan": 1, "scans_per_day": 72},
-                {"account_id": "1813037", "status": "ACTIVE", "project_count": 2, "changes_made": 0, "auto_scan": 1, "scans_per_day": 72},
-                {"account_id": "1813041", "status": "ACTIVE", "project_count": 4, "changes_made": 0, "auto_scan": 1, "scans_per_day": 72},
-                {"account_id": "1823276", "status": "ACTIVE", "project_count": 16, "changes_made": 0, "auto_scan": 1, "scans_per_day": 72},
-                {"account_id": "1828308", "status": "ACTIVE", "project_count": 1, "changes_made": 0, "auto_scan": 1, "scans_per_day": 72},
-                {"account_id": "1829970", "status": "ACTIVE", "project_count": 6, "changes_made": 0, "auto_scan": 1, "scans_per_day": 72},
-                {"account_id": "1829976", "status": "ACTIVE", "project_count": 4, "changes_made": 0, "auto_scan": 1, "scans_per_day": 72},
-                {"account_id": "1847769", "status": "ACTIVE", "project_count": 6, "changes_made": 0, "auto_scan": 1, "scans_per_day": 72},
-                {"account_id": "1867619", "status": "ACTIVE", "project_count": 6, "changes_made": 0, "auto_scan": 1, "scans_per_day": 72},
+            "total_accounts_checked": 3,  # Only accounts that were actually processed
+            "total_projects_reset": 159,  # Total projects reset in last 24 hours
+            "execution_time": 23.4,  # Float value for execution time
+            "priority_reset_performed": True,
+            "newly_inactive_count": 3,
+            "accounts_reset": [
+                # Priority newly inactive accounts (last 24h)
+                {"account_id": "1878208", "account_name": "clevercrowads-sc", "auto_scan": 0, "scans_per_day": 0, "total_projects": 72, "status": "PRIORITY_NEWLY_INACTIVE", "projects_reset": 72},
+                {"account_id": "1953730", "account_name": "level-upadsco-sc", "auto_scan": 0, "scans_per_day": 0, "total_projects": 46, "status": "PRIORITY_NEWLY_INACTIVE", "projects_reset": 46},  
+                {"account_id": "1878374", "account_name": "tiagodemcardoso-account", "auto_scan": 0, "scans_per_day": 0, "total_projects": 41, "status": "PRIORITY_NEWLY_INACTIVE", "projects_reset": 41},
+                
+                # NOTE: Removed regular inactive accounts with no recent changes
+                # Only showing accounts that had actual project resets in last 24h
             ]
         }
         
@@ -168,20 +188,36 @@ CC_RECIPIENTS=manager@company.com
         print("\n⚠️  SMTP connection failed, but continuing with email test...")
         print("(Some internal SMTP servers may reject connection tests)")
     
-    # Step 3: Send test email
-    if not send_test_email():
+# Step 3: Send test emails for both scenarios
+    print("\n📧 TESTING: Email with Recent Changes (Last 24H)")
+    print("="*50)
+    changes_success = send_test_email()
+    
+    if not changes_success:
         return 1
     
+    # Wait a moment then test no changes scenario
+    import time
+    time.sleep(2)
+    
+    print("\n📧 TESTING: Email with No Changes Scenario")
+    print("="*50)
+    no_changes_success = send_test_email_no_changes()
+    
+    if not no_changes_success:
+        return 1
+
     print("\n🎉 All email tests passed!")
     print("\n📋 Next Steps:")
-    print("1. Check your email for the test report")
-    print("2. If you received it, email notifications are working!")
-    print("3. The daily reset script will automatically send reports")
-    print("4. Email reports include:")
-    print("   - Account processing summary")
-    print("   - Project scan results") 
-    print("   - Configuration changes made")
-    print("   - CSV attachment with detailed data")
+    print("1. Check your email for BOTH test reports")
+    print("2. First email: Shows recent changes in last 24 hours only")
+    print("3. Second email: Shows 'no changes' scenario")
+    print("4. The daily reset script will automatically send reports")
+    print("5. Email reports include:")
+    print("   - Only accounts with changes in last 24 hours")
+    print("   - Priority newly inactive account alerts")
+    print("   - Project scan configuration details")
+    print("   - CSV attachment with recent changes only")
     
     return 0
 

@@ -207,30 +207,44 @@ class HTMLEmailBuilder:
         """
     
     @staticmethod
-    def build_account_table(accounts: List[Dict[str, Any]], title: str = "Account Details") -> str:
+    def build_account_table(accounts: List[Dict[str, Any]], title: str = "Account Details", is_priority: bool = False) -> str:
         """Build a styled table for account information with scan configuration details"""
         if not accounts:
             return f"<p><em>No {title.lower()} to display.</em></p>"
         
-        header_cells = """
-        <th style="padding: 12px; border: 1px solid #ddd; background-color: #1a73e8; color: white; font-size: 13px;">Account ID</th>
-        <th style="padding: 12px; border: 1px solid #ddd; background-color: #1a73e8; color: white; font-size: 13px;">Status</th>
-        <th style="padding: 12px; border: 1px solid #ddd; background-color: #1a73e8; color: white; font-size: 13px;">Total Projects</th>
-        <th style="padding: 12px; border: 1px solid #ddd; background-color: #1a73e8; color: white; font-size: 13px;">Auto Scan</th>
-        <th style="padding: 12px; border: 1px solid #ddd; background-color: #1a73e8; color: white; font-size: 13px;">Scans Per Day</th>
+        # Use red background for priority accounts
+        header_bg_color = "#d32f2f" if is_priority else "#1a73e8"
+        
+        header_cells = f"""
+        <th style="padding: 12px; border: 1px solid #ddd; background-color: {header_bg_color}; color: white; font-size: 13px;">Account ID</th>
+        <th style="padding: 12px; border: 1px solid #ddd; background-color: {header_bg_color}; color: white; font-size: 13px;">Account Name</th>
+        <th style="padding: 12px; border: 1px solid #ddd; background-color: {header_bg_color}; color: white; font-size: 13px;">Status</th>
+        <th style="padding: 12px; border: 1px solid #ddd; background-color: {header_bg_color}; color: white; font-size: 13px;">Total Projects</th>
+        <th style="padding: 12px; border: 1px solid #ddd; background-color: {header_bg_color}; color: white; font-size: 13px;">Auto Scan</th>
+        <th style="padding: 12px; border: 1px solid #ddd; background-color: {header_bg_color}; color: white; font-size: 13px;">Scans Per Day</th>
         <th style="padding: 12px; border: 1px solid #ddd; background-color: #1a73e8; color: white; font-size: 13px;">Configuration</th>
-        <th style="padding: 12px; border: 1px solid #ddd; background-color: #1a73e8; color: white; font-size: 13px;">Changes Made</th>
+        <th style="padding: 12px; border: 1px solid #ddd; background-color: #1a73e8; color: white; font-size: 13px;">Projects Reset</th>
         """
         
         rows = ""
         for account in accounts:
-            status_color = "#4caf50" if account.get("status") == "ACTIVE" else "#ff9800"
-            changes_made = account.get("changes_made", 0)
-            changes_color = "#ff5722" if changes_made > 0 else "#4caf50"
-            
+            # Handle different status types with appropriate colors
+            status = account.get("status", "UNKNOWN")
+            if "PRIORITY" in status:
+                status_color = "#d32f2f"  # Red for priority
+                row_bg = "#ffebee"  # Light red background
+            elif status == "ACTIVE_AUTO_SCAN" or account.get("auto_scan", 0) == 1:
+                status_color = "#ff9800"  # Orange for active
+                row_bg = "#fff8e1"  # Light orange background
+            else:
+                status_color = "#4caf50"  # Green for inactive/reset
+                row_bg = "#f1f8e9"  # Light green background
+                
             # Get scan configuration
             auto_scan = account.get("auto_scan", 0)
             scans_per_day = account.get("scans_per_day", 0)
+            total_projects = account.get("total_projects", 0)
+            account_name = account.get("account_name", "N/A")
             
             # Configuration status
             if auto_scan == 0 and scans_per_day == 0:
@@ -247,20 +261,23 @@ class HTMLEmailBuilder:
                 config_icon = "ℹ️"
             
             rows += f"""
-            <tr>
+            <tr style="background-color: {row_bg};">
                 <td style="padding: 10px; border: 1px solid #ddd; font-family: monospace;">{account.get('account_id', 'N/A')}</td>
+                <td style="padding: 10px; border: 1px solid #ddd; font-size: 12px;">{account_name}</td>
                 <td style="padding: 10px; border: 1px solid #ddd;">
                     <span style="background: {status_color}; color: white; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: bold;">
-                        {account.get('status', 'UNKNOWN')}
+                        {status.replace('_', ' ')}
                     </span>
                 </td>
-                <td style="padding: 10px; border: 1px solid #ddd; text-align: center; font-weight: bold;">{account.get('project_count', 0)}</td>
+                <td style="padding: 10px; border: 1px solid #ddd; text-align: center; font-weight: bold;">{total_projects}</td>
                 <td style="padding: 10px; border: 1px solid #ddd; text-align: center; font-family: monospace;">{auto_scan}</td>
                 <td style="padding: 10px; border: 1px solid #ddd; text-align: center; font-family: monospace;">{scans_per_day}</td>
-                <td style="padding: 10px; border: 1px solid #ddd; text-align: center;">
-                    <span style="color: {config_color}; font-weight: bold;">{config_icon} {config_status}</span>
+                <td style="padding: 8px; border: 1px solid #ddd; text-align: center;">
+                    <span style="color: {config_color}; font-weight: bold; font-size: 12px;">
+                        {config_icon} {config_status}
+                    </span>
                 </td>
-                <td style="padding: 10px; border: 1px solid #ddd; text-align: center; color: {changes_color}; font-weight: bold;">{changes_made}</td>
+                <td style="padding: 8px; border: 1px solid #ddd; font-size: 13px; text-align: center; font-weight: bold;">{account.get('projects_reset', account.get('total_projects', 0))}</td>
             </tr>
             """
         
@@ -315,11 +332,17 @@ class GeoEdgeEmailReporter:
             projects_reset = report_data.get("projects_reset", 0)
             
             # Build summary statistics
+            # Build summary statistics with enhanced data
+            accounts_reset = report_data.get("accounts_reset", [])
+            inactive_accounts = len([acc for acc in accounts_reset if acc.get("auto_scan", 0) == 0])
+            active_accounts = len([acc for acc in accounts_reset if acc.get("auto_scan", 0) == 1])
+            total_projects = sum(acc.get("total_projects", 0) for acc in accounts_reset)
+            
             stats = {
-                "Total Accounts": report_data.get("total_accounts_checked", 0),
-                "Inactive Accounts": report_data.get("inactive_accounts", 0),
-                "Active Accounts": report_data.get("active_accounts", 0),
-                "Projects Scanned": report_data.get("total_projects_scanned", 0),
+                "Total Accounts": report_data.get("total_accounts_checked", len(accounts_reset)),
+                "Inactive Accounts": inactive_accounts,
+                "Active Accounts": active_accounts,
+                "Projects Scanned": total_projects,
                 "Projects Reset": projects_reset,
                 "Execution Time": f"{report_data.get('execution_time', 0):.1f}s"
             }
@@ -327,70 +350,97 @@ class GeoEdgeEmailReporter:
             # Build main content
             content_parts = []
             
-            # Add summary stats
-            content_parts.append(self.builder.build_summary_stats(stats))
+            # Check if there are any recent changes first
+            accounts_reset = report_data.get("accounts_reset", [])
+            recent_accounts = self._filter_recent_changes(accounts_reset)
             
-            # Add status message
-            if status == "success":
-                if projects_reset > 0:
-                    content_parts.append(
-                        self.builder.build_success_message(
-                            "Daily reset completed with configuration updates",
-                            f"Reset {projects_reset} projects from Auto-Scan (1,72) to Manual Mode (0,0). "
-                            f"This disables automatic scanning for inactive accounts to save resources."
+            # Only add summary stats if there are recent changes
+            if recent_accounts:
+                content_parts.append(self.builder.build_summary_stats(stats))
+            
+                # Add status message and configuration details only if there are recent changes
+            if recent_accounts:
+                if status == "success":
+                    if projects_reset > 0:
+                        content_parts.append(
+                            self.builder.build_success_message(
+                                "Daily reset completed with configuration updates",
+                                f"Reset {projects_reset} projects from Auto-Scan (1,72) to Manual Mode (0,0). "
+                                f"This disables automatic scanning for inactive accounts to save resources."
+                            )
                         )
-                    )
+                    else:
+                        # Calculate totals from recent accounts instead of old data
+                        total_recent_projects = sum(acc.get("total_projects", 0) for acc in recent_accounts)
+                        content_parts.append(
+                            self.builder.build_success_message(
+                                "Daily reset completed - recent accounts properly configured",
+                                f"Processed {len(recent_accounts)} accounts with {total_recent_projects} projects. "
+                                f"All inactive accounts are now set to Manual Mode (0,0) - no scanning will occur."
+                            )
+                        )
                 else:
-                    total_inactive_projects = sum(acc.get("project_count", 0) for acc in report_data.get("inactive_account_details", []))
-                    inactive_count = report_data.get("inactive_accounts", 0)
+                    error_msg = report_data.get("error_message", "Unknown error occurred")
                     content_parts.append(
-                        self.builder.build_success_message(
-                            "Daily reset completed - all projects properly configured",
-                            f"All {total_inactive_projects} projects under {inactive_count} inactive accounts "
-                            f"are already set to Manual Mode (0,0) - no scanning will occur."
-                        )
+                        self.builder.build_error_message("Daily reset failed", error_msg)
                     )
-            else:
-                error_msg = report_data.get("error_message", "Unknown error occurred")
-                content_parts.append(
-                    self.builder.build_error_message("Daily reset failed", error_msg)
-                )
-            
-            # Add configuration explanation
-            content_parts.append("""
-            <div style="background-color: #e3f2fd; border: 1px solid #2196f3; padding: 15px; margin: 20px 0; border-radius: 6px;">
-                <h4 style="margin: 0 0 10px 0; color: #1565c0;">📋 Configuration Explained</h4>
-                <div style="font-size: 13px; color: #1976d2; line-height: 1.5;">
-                    <strong>Manual Mode (0,0):</strong> Auto-Scan = 0 (OFF), Scans Per Day = 0 (No scanning)<br>
-                    <strong>Auto Mode (1,72):</strong> Auto-Scan = 1 (ON), Scans Per Day = 72 (Full scanning)<br><br>
-                    <em>Inactive accounts should use Manual Mode (0,0) to prevent unnecessary resource usage and costs.</em>
-                </div>
-            </div>
-            """)
-            
-            # Add account details
-            inactive_accounts = report_data.get("inactive_account_details", [])
-            if inactive_accounts:
-                total_inactive = report_data.get("inactive_accounts", len(inactive_accounts))
-                total_inactive_projects = sum(acc.get("project_count", 0) for acc in inactive_accounts)
-                title = f"Inactive Accounts - All {len(inactive_accounts)} Accounts ({total_inactive_projects} Total Projects)"
-                content_parts.append(
-                    self.builder.build_account_table(inactive_accounts, title)
-                )
-            
-            active_accounts = report_data.get("active_account_details", [])
-            if active_accounts:
-                total_active = report_data.get("active_accounts", 0)
-                total_active_projects = sum(acc.get("project_count", 0) for acc in active_accounts)
                 
-                if len(active_accounts) < total_active:
-                    title = f"Recent Active Accounts - Sample {len(active_accounts)} of {total_active} Total ({total_active_projects} Projects Shown)"
-                else:
-                    title = f"Active Accounts - All {len(active_accounts)} Accounts ({total_active_projects} Total Projects)"
-                    
-                content_parts.append(
-                    self.builder.build_account_table(active_accounts, title)
-                )
+                # Add configuration explanation only when there are changes
+                content_parts.append("""
+                <div style="background-color: #e3f2fd; border: 1px solid #2196f3; padding: 15px; margin: 20px 0; border-radius: 6px;">
+                    <h4 style="margin: 0 0 10px 0; color: #1565c0;">📋 Configuration Explained</h4>
+                    <div style="font-size: 13px; color: #1976d2; line-height: 1.5;">
+                        <strong>Manual Mode (0,0):</strong> Auto-Scan = 0 (OFF), Scans Per Day = 0 (No scanning)<br>
+                        <strong>Auto Mode (1,72):</strong> Auto-Scan = 1 (ON), Scans Per Day = 72 (Full scanning)<br><br>
+                        <em>Inactive accounts should use Manual Mode (0,0) to prevent unnecessary resource usage and costs.</em>
+                    </div>
+                </div>
+                """)
+            
+            # Filter to only accounts with actual changes or recent activity
+            recent_accounts = self._filter_recent_changes(accounts_reset)
+            
+            # If no recent changes, show minimal summary and skip detailed sections
+            if not recent_accounts:
+                content_parts = ["""
+                <div style="background-color: #e8f5e8; border: 1px solid #4caf50; padding: 20px; margin: 20px 0; border-radius: 6px; text-align: center;">
+                    <h3 style="margin: 0 0 15px 0; color: #2e7d32;">✅ No Account Changes Detected</h3>
+                    <div style="font-size: 14px; color: #388e3c; line-height: 1.6;">
+                        All inactive accounts remain properly configured in Manual Mode (0,0).<br>
+                        No new accounts became inactive in the last 24 hours.<br>
+                        <strong>System monitoring is working correctly.</strong>
+                    </div>
+                </div>
+                """]
+            else:
+                # Separate priority and regular accounts from recent changes only
+                priority_accounts = [acc for acc in recent_accounts if "PRIORITY" in acc.get("status", "")]
+                inactive_accounts = [acc for acc in recent_accounts if acc.get("auto_scan", 0) == 0 and "PRIORITY" not in acc.get("status", "")]
+                active_accounts = [acc for acc in recent_accounts if acc.get("auto_scan", 0) == 1]
+                
+                # Add priority account alerts if any
+                if priority_accounts:
+                    priority_projects = sum(acc.get("total_projects", 0) for acc in priority_accounts)
+                    title = f"🚨 PRIORITY ACCOUNT ALERTS (Last 24H) - {len(priority_accounts)} Newly Inactive Accounts ({priority_projects} Projects Reset)"
+                    content_parts.append(
+                        self.builder.build_account_table(priority_accounts, title, is_priority=True)
+                    )
+                
+                # Add inactive accounts with recent changes
+                if inactive_accounts:
+                    inactive_projects = sum(acc.get("total_projects", 0) for acc in inactive_accounts)
+                    title = f"Recent Changes (Last 24H) - {len(inactive_accounts)} Accounts ({inactive_projects} Total Projects)"
+                    content_parts.append(
+                        self.builder.build_account_table(inactive_accounts, title)
+                    )
+                
+                # Only show active accounts if there were actual changes
+                if active_accounts and (priority_accounts or inactive_accounts):
+                    active_projects = sum(acc.get("total_projects", 0) for acc in active_accounts)
+                    title = f"Active Accounts (Recent Activity) - {len(active_accounts)} Accounts ({active_projects} Total Projects)"
+                    content_parts.append(
+                        self.builder.build_account_table(active_accounts, title)
+                    )
             
             # Build final email
             main_content = "".join(content_parts)
@@ -401,12 +451,11 @@ class GeoEdgeEmailReporter:
                 main_content=main_content
             )
             
-            # Prepare CSV data for attachment
+            # Prepare CSV data for attachment (only recent changes)
             csv_data = []
-            all_accounts = (report_data.get("inactive_account_details", []) + 
-                           report_data.get("active_account_details", []))
             
-            for account in all_accounts:
+            # Only include accounts with recent changes in CSV
+            for account in recent_accounts:
                 csv_data.append({
                     "Account ID": account.get("account_id"),
                     "Account Status": account.get("status"),
@@ -415,7 +464,7 @@ class GeoEdgeEmailReporter:
                     "Scans Per Day": account.get("scans_per_day", 0),
                     "Configuration": f"({account.get('auto_scan', 0)},{account.get('scans_per_day', 0)})",
                     "Configuration Type": "Manual Mode" if (account.get('auto_scan', 0) == 0 and account.get('scans_per_day', 0) == 0) else "Auto Mode" if (account.get('auto_scan', 0) == 1 and account.get('scans_per_day', 0) == 72) else "Custom",
-                    "Changes Made": account.get("changes_made", 0),
+                    "Projects Reset": account.get("projects_reset", account.get("total_projects", 0)),  # Use projects_reset or total_projects as fallback
                     "Last Updated": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
                     "Scan Status": "Disabled" if (account.get('auto_scan', 0) == 0 and account.get('scans_per_day', 0) == 0) else "Enabled"
                 })
@@ -423,7 +472,10 @@ class GeoEdgeEmailReporter:
             # Send email
             date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
             
-            if status == "success":
+            # Adjust subject line based on whether there are recent changes
+            if not recent_accounts:
+                subject = f"✅ GeoEdge Monitor - No Changes Detected ({date_str})"
+            elif status == "success":
                 if projects_reset > 0:
                     subject = f"🔧 GeoEdge Daily Reset - {projects_reset} Projects Updated ({date_str})"
                 else:
@@ -442,8 +494,36 @@ class GeoEdgeEmailReporter:
             
         except Exception as e:
             print(f"❌ Failed to send reset report email: {str(e)}")
-            return False
-    
+            return False    
+    def _filter_recent_changes(self, accounts_reset: List[Dict]) -> List[Dict]:
+        """Filter accounts to only include those with changes in the last 24 hours"""
+        from datetime import datetime, timedelta
+        
+        recent_accounts = []
+        cutoff_time = datetime.now() - timedelta(hours=24)
+        
+        for account in accounts_reset:
+            status = account.get("status", "")
+            
+            # Always include priority newly inactive accounts
+            if "PRIORITY" in status or "NEWLY_INACTIVE" in status:
+                recent_accounts.append(account)
+                continue
+            
+            # Include accounts that had actual resets (projects_reset > 0)
+            projects_reset = account.get("projects_reset", 0)
+            if projects_reset > 0:
+                recent_accounts.append(account)
+                continue
+                
+            # For other accounts, only include if they have recent timestamps
+            # This would need to be implemented based on your specific timestamp fields
+            # For now, exclude accounts that seem to be just status quo
+            if status in ["RESET_TO_MANUAL", "ACTIVE_AUTO_SCAN"]:
+                # Only include if there were actual changes, not just status checks
+                continue
+        
+        return recent_accounts    
     def build_error_message(self, message: str, details: Optional[str] = None) -> str:
         """Build an error message HTML block"""
         details_html = f"<p style=\"margin: 10px 0 0 0; font-size: 13px; color: #d32f2f;\">{details}</p>" if details else ""

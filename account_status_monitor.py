@@ -99,7 +99,7 @@ class AccountStatusMonitor:
             return {}, datetime.min
     
     def find_newly_inactive_accounts(self) -> List[Dict]:
-        """Find accounts that became inactive since last baseline"""
+        """Find accounts that became inactive since last baseline (within 24 hours only)"""
         current_accounts = self.get_current_account_statuses()
         baseline_accounts, baseline_time = self.load_baseline()
         
@@ -109,6 +109,11 @@ class AccountStatusMonitor:
             print("⚠️ No baseline found. Creating initial baseline...")
             self.save_baseline(current_accounts)
             return []
+        
+        # Only consider changes if baseline is less than 24 hours old
+        hours_since_baseline = (datetime.now() - baseline_time).total_seconds() / 3600
+        if hours_since_baseline > 24:
+            print(f"⚠️ Baseline is {hours_since_baseline:.1f} hours old. Only showing very recent changes...")
         
         print(f"🔍 Comparing with baseline from {baseline_time}")
         
@@ -121,16 +126,40 @@ class AccountStatusMonitor:
                 
                 # Found a newly inactive account!
                 if baseline_status in ['LIVE', 'ACTIVE'] and current_status == 'INACTIVE':
-                    newly_inactive.append({
-                        'id': account_id,
-                        'name': current_data['name'],
-                        'old_status': baseline_status,
-                        'new_status': current_status,
-                        'change_reason': current_data['status_change_reason'],
-                        'inactivity_date': current_data['inactivity_date']
-                    })
+                    # Double-check with database timestamps to ensure it's within 24 hours
+                    if self._is_change_within_24_hours(current_data):
+                        newly_inactive.append({
+                            'id': account_id,
+                            'name': current_data['name'],
+                            'old_status': baseline_status,
+                            'new_status': current_status,
+                            'change_reason': current_data['status_change_reason'],
+                            'inactivity_date': current_data['inactivity_date']
+                        })
         
         return newly_inactive
+    
+    def _is_change_within_24_hours(self, account_data: Dict) -> bool:
+        """Verify that the account change occurred within the last 24 hours"""
+        try:
+            # Check inactivity_date first
+            if account_data.get('inactivity_date'):
+                inactivity_date = datetime.fromisoformat(account_data['inactivity_date'])
+                hours_ago = (datetime.now() - inactivity_date).total_seconds() / 3600
+                if hours_ago <= 24:
+                    return True
+            
+            # Check update_time as fallback
+            if account_data.get('update_time'):
+                update_time = datetime.fromisoformat(account_data['update_time'])
+                hours_ago = (datetime.now() - update_time).total_seconds() / 3600
+                if hours_ago <= 24:
+                    return True
+                    
+            return False
+        except Exception:
+            # If we can't parse dates, assume it's recent to be safe
+            return True
     
     def get_projects_for_accounts(self, account_ids: List[int]) -> Dict[int, Dict]:
         """Get project counts for specific accounts"""
