@@ -352,6 +352,27 @@ def main() -> int:
     args = parse_args()
     account_ids = load_accounts(args.accounts_file)
 
+    # Step 1: Detect newly inactive accounts before processing
+    try:
+        from detect_inactive_accounts import enhanced_reset_for_status_changes
+        print("🔍 Checking for newly inactive accounts...")
+        newly_inactive = enhanced_reset_for_status_changes()
+        
+        if newly_inactive:
+            print(f"🚨 PRIORITY: Found {len(newly_inactive)} newly inactive accounts!")
+            print("   These will be processed with ALL their projects (not just recent ones)")
+            # Add newly inactive accounts to our target list
+            for acc_id in newly_inactive:
+                if acc_id not in account_ids:
+                    account_ids.append(acc_id)
+        else:
+            print("✅ No newly inactive accounts detected")
+            
+    except ImportError:
+        print("ℹ️  Account change detection not available (detect_inactive_accounts.py not found)")
+    except Exception as e:
+        print(f"⚠️ Error in account change detection: {e}")
+
     statuses = fetch_account_statuses(account_ids)
     frozen_accounts = [acc for acc, label in statuses.items() if label in FROZEN_MARKERS]
     live_accounts = [acc for acc, label in statuses.items() if label not in FROZEN_MARKERS]
@@ -506,11 +527,24 @@ def main() -> int:
                 account_projects = [p for p in frozen_projects if str(p['syndicator_id']) == acc]
                 account_resets = sum(1 for r in results 
                                    if r.get('account_id') == acc and r.get('status') in {'reset', 'dry-run'})
+                
+                # Get typical scan configuration for this account (most common config among projects)
+                scan_configs = [(p.get('auto_scan', 0), p.get('times_per_day', 0)) for p in account_projects if p.get('auto_scan') is not None]
+                if scan_configs:
+                    # Use most common configuration
+                    from collections import Counter
+                    most_common_config = Counter(scan_configs).most_common(1)[0][0]
+                    auto_scan, scans_per_day = most_common_config
+                else:
+                    auto_scan, scans_per_day = 0, 0  # Default to manual mode
+                
                 report_data["inactive_account_details"].append({
                     "account_id": acc,
                     "status": "INACTIVE", 
                     "project_count": len(account_projects),
-                    "changes_made": account_resets
+                    "changes_made": account_resets,
+                    "auto_scan": auto_scan,
+                    "scans_per_day": scans_per_day
                 })
             
             for acc in live_accounts:
@@ -518,11 +552,23 @@ def main() -> int:
                 if account_projects:  # Only include accounts with projects
                     account_resets = sum(1 for r in results 
                                        if r.get('account_id') == acc and r.get('status') in {'reset', 'dry-run'})
+                    
+                    # Get typical scan configuration for this account
+                    scan_configs = [(p.get('auto_scan', 0), p.get('times_per_day', 0)) for p in account_projects if p.get('auto_scan') is not None]
+                    if scan_configs:
+                        from collections import Counter
+                        most_common_config = Counter(scan_configs).most_common(1)[0][0]
+                        auto_scan, scans_per_day = most_common_config
+                    else:
+                        auto_scan, scans_per_day = 1, 72  # Default to auto mode for active accounts
+                    
                     report_data["active_account_details"].append({
                         "account_id": acc,
                         "status": "ACTIVE",
                         "project_count": len(account_projects), 
-                        "changes_made": account_resets
+                        "changes_made": account_resets,
+                        "auto_scan": auto_scan,
+                        "scans_per_day": scans_per_day
                     })
             
             # Send email report

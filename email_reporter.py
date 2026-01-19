@@ -208,14 +208,17 @@ class HTMLEmailBuilder:
     
     @staticmethod
     def build_account_table(accounts: List[Dict[str, Any]], title: str = "Account Details") -> str:
-        """Build a styled table for account information"""
+        """Build a styled table for account information with scan configuration details"""
         if not accounts:
             return f"<p><em>No {title.lower()} to display.</em></p>"
         
         header_cells = """
         <th style="padding: 12px; border: 1px solid #ddd; background-color: #1a73e8; color: white; font-size: 13px;">Account ID</th>
         <th style="padding: 12px; border: 1px solid #ddd; background-color: #1a73e8; color: white; font-size: 13px;">Status</th>
-        <th style="padding: 12px; border: 1px solid #ddd; background-color: #1a73e8; color: white; font-size: 13px;">Projects</th>
+        <th style="padding: 12px; border: 1px solid #ddd; background-color: #1a73e8; color: white; font-size: 13px;">Total Projects</th>
+        <th style="padding: 12px; border: 1px solid #ddd; background-color: #1a73e8; color: white; font-size: 13px;">Auto Scan</th>
+        <th style="padding: 12px; border: 1px solid #ddd; background-color: #1a73e8; color: white; font-size: 13px;">Scans Per Day</th>
+        <th style="padding: 12px; border: 1px solid #ddd; background-color: #1a73e8; color: white; font-size: 13px;">Configuration</th>
         <th style="padding: 12px; border: 1px solid #ddd; background-color: #1a73e8; color: white; font-size: 13px;">Changes Made</th>
         """
         
@@ -225,6 +228,24 @@ class HTMLEmailBuilder:
             changes_made = account.get("changes_made", 0)
             changes_color = "#ff5722" if changes_made > 0 else "#4caf50"
             
+            # Get scan configuration
+            auto_scan = account.get("auto_scan", 0)
+            scans_per_day = account.get("scans_per_day", 0)
+            
+            # Configuration status
+            if auto_scan == 0 and scans_per_day == 0:
+                config_status = "Manual (0,0)"
+                config_color = "#4caf50"  # Green for correct
+                config_icon = "✅"
+            elif auto_scan == 1 and scans_per_day == 72:
+                config_status = "Auto (1,72)"
+                config_color = "#ff9800"  # Orange for needs change
+                config_icon = "⚠️"
+            else:
+                config_status = f"Custom ({auto_scan},{scans_per_day})"
+                config_color = "#2196f3"  # Blue for other
+                config_icon = "ℹ️"
+            
             rows += f"""
             <tr>
                 <td style="padding: 10px; border: 1px solid #ddd; font-family: monospace;">{account.get('account_id', 'N/A')}</td>
@@ -233,7 +254,12 @@ class HTMLEmailBuilder:
                         {account.get('status', 'UNKNOWN')}
                     </span>
                 </td>
-                <td style="padding: 10px; border: 1px solid #ddd; text-align: center;">{account.get('project_count', 0)}</td>
+                <td style="padding: 10px; border: 1px solid #ddd; text-align: center; font-weight: bold;">{account.get('project_count', 0)}</td>
+                <td style="padding: 10px; border: 1px solid #ddd; text-align: center; font-family: monospace;">{auto_scan}</td>
+                <td style="padding: 10px; border: 1px solid #ddd; text-align: center; font-family: monospace;">{scans_per_day}</td>
+                <td style="padding: 10px; border: 1px solid #ddd; text-align: center;">
+                    <span style="color: {config_color}; font-weight: bold;">{config_icon} {config_status}</span>
+                </td>
                 <td style="padding: 10px; border: 1px solid #ddd; text-align: center; color: {changes_color}; font-weight: bold;">{changes_made}</td>
             </tr>
             """
@@ -241,6 +267,11 @@ class HTMLEmailBuilder:
         return f"""
         <div style="margin: 20px 0;">
             <h3 style="color: #333; margin-bottom: 10px; font-size: 16px;">{title}</h3>
+            <div style="background: #f8f9fa; padding: 10px; border-radius: 4px; margin-bottom: 10px; font-size: 12px;">
+                <strong>Configuration Guide:</strong>
+                <span style="color: #4caf50;">✅ Manual (0,0)</span> = Auto-scan OFF, No daily scans (Recommended for inactive accounts) | 
+                <span style="color: #ff9800;">⚠️ Auto (1,72)</span> = Auto-scan ON, 72 scans per day (Active accounts only)
+            </div>
             <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
                 <thead>
                     <tr>{header_cells}</tr>
@@ -305,14 +336,18 @@ class GeoEdgeEmailReporter:
                     content_parts.append(
                         self.builder.build_success_message(
                             "Daily reset completed with configuration updates",
-                            f"Reset {projects_reset} projects from auto-scan (1,72) to manual mode (0,0)"
+                            f"Reset {projects_reset} projects from Auto-Scan (1,72) to Manual Mode (0,0). "
+                            f"This disables automatic scanning for inactive accounts to save resources."
                         )
                     )
                 else:
+                    total_inactive_projects = sum(acc.get("project_count", 0) for acc in report_data.get("inactive_account_details", []))
+                    inactive_count = report_data.get("inactive_accounts", 0)
                     content_parts.append(
                         self.builder.build_success_message(
                             "Daily reset completed - all projects properly configured",
-                            "All inactive account projects are already set to manual mode (0,0)"
+                            f"All {total_inactive_projects} projects under {inactive_count} inactive accounts "
+                            f"are already set to Manual Mode (0,0) - no scanning will occur."
                         )
                     )
             else:
@@ -321,17 +356,38 @@ class GeoEdgeEmailReporter:
                     self.builder.build_error_message("Daily reset failed", error_msg)
                 )
             
+            # Add configuration explanation
+            content_parts.append("""
+            <div style="background-color: #e3f2fd; border: 1px solid #2196f3; padding: 15px; margin: 20px 0; border-radius: 6px;">
+                <h4 style="margin: 0 0 10px 0; color: #1565c0;">📋 Configuration Explained</h4>
+                <div style="font-size: 13px; color: #1976d2; line-height: 1.5;">
+                    <strong>Manual Mode (0,0):</strong> Auto-Scan = 0 (OFF), Scans Per Day = 0 (No scanning)<br>
+                    <strong>Auto Mode (1,72):</strong> Auto-Scan = 1 (ON), Scans Per Day = 72 (Full scanning)<br><br>
+                    <em>Inactive accounts should use Manual Mode (0,0) to prevent unnecessary resource usage and costs.</em>
+                </div>
+            </div>
+            """)
+            
             # Add account details
             inactive_accounts = report_data.get("inactive_account_details", [])
             if inactive_accounts:
+                total_inactive = report_data.get("inactive_accounts", len(inactive_accounts))
+                total_inactive_projects = sum(acc.get("project_count", 0) for acc in inactive_accounts)
+                title = f"Inactive Accounts - All {len(inactive_accounts)} Accounts ({total_inactive_projects} Total Projects)"
                 content_parts.append(
-                    self.builder.build_account_table(inactive_accounts, "Inactive Accounts Processed")
+                    self.builder.build_account_table(inactive_accounts, title)
                 )
             
-            active_accounts = report_data.get("active_account_details", [])[:10]  # Limit to first 10
+            active_accounts = report_data.get("active_account_details", [])
             if active_accounts:
-                total_active = len(report_data.get("active_account_details", []))
-                title = f"Recent Active Accounts ({len(active_accounts)} of {total_active})"
+                total_active = report_data.get("active_accounts", 0)
+                total_active_projects = sum(acc.get("project_count", 0) for acc in active_accounts)
+                
+                if len(active_accounts) < total_active:
+                    title = f"Recent Active Accounts - Sample {len(active_accounts)} of {total_active} Total ({total_active_projects} Projects Shown)"
+                else:
+                    title = f"Active Accounts - All {len(active_accounts)} Accounts ({total_active_projects} Total Projects)"
+                    
                 content_parts.append(
                     self.builder.build_account_table(active_accounts, title)
                 )
@@ -353,10 +409,15 @@ class GeoEdgeEmailReporter:
             for account in all_accounts:
                 csv_data.append({
                     "Account ID": account.get("account_id"),
-                    "Status": account.get("status"),
-                    "Project Count": account.get("project_count", 0),
+                    "Account Status": account.get("status"),
+                    "Total Projects": account.get("project_count", 0),
+                    "Auto Scan Setting": account.get("auto_scan", 0),
+                    "Scans Per Day": account.get("scans_per_day", 0),
+                    "Configuration": f"({account.get('auto_scan', 0)},{account.get('scans_per_day', 0)})",
+                    "Configuration Type": "Manual Mode" if (account.get('auto_scan', 0) == 0 and account.get('scans_per_day', 0) == 0) else "Auto Mode" if (account.get('auto_scan', 0) == 1 and account.get('scans_per_day', 0) == 72) else "Custom",
                     "Changes Made": account.get("changes_made", 0),
-                    "Last Updated": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+                    "Last Updated": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
+                    "Scan Status": "Disabled" if (account.get('auto_scan', 0) == 0 and account.get('scans_per_day', 0) == 0) else "Enabled"
                 })
             
             # Send email

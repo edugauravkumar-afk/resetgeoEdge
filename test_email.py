@@ -56,7 +56,7 @@ def send_test_email():
         
         print("\n📧 Sending test email...")
         
-        # Create sample report data
+        # Create realistic sample report data
         test_data = {
             "total_accounts_checked": 97,
             "inactive_accounts": 4,
@@ -66,16 +66,22 @@ def send_test_email():
             "execution_time": 42.5,
             "status": "success",
             "inactive_account_details": [
-                {"account_id": "1234567", "status": "INACTIVE", "project_count": 150, "changes_made": 0},
-                {"account_id": "2345678", "status": "INACTIVE", "project_count": 200, "changes_made": 0},
-                {"account_id": "3456789", "status": "INACTIVE", "project_count": 100, "changes_made": 0},
-                {"account_id": "4567890", "status": "INACTIVE", "project_count": 75, "changes_made": 0},
+                {"account_id": "1290644", "status": "INACTIVE", "project_count": 150, "changes_made": 0, "auto_scan": 0, "scans_per_day": 0},
+                {"account_id": "1466060", "status": "INACTIVE", "project_count": 200, "changes_made": 0, "auto_scan": 0, "scans_per_day": 0},
+                {"account_id": "1835770", "status": "INACTIVE", "project_count": 125, "changes_made": 0, "auto_scan": 0, "scans_per_day": 0},
+                {"account_id": "1623554", "status": "INACTIVE", "project_count": 178, "changes_made": 0, "auto_scan": 0, "scans_per_day": 0},
             ],
             "active_account_details": [
-                {"account_id": "5678901", "status": "ACTIVE", "project_count": 25, "changes_made": 0},
-                {"account_id": "6789012", "status": "ACTIVE", "project_count": 15, "changes_made": 0},
-                {"account_id": "7890123", "status": "ACTIVE", "project_count": 30, "changes_made": 0},
-                {"account_id": "8901234", "status": "ACTIVE", "project_count": 8, "changes_made": 0},
+                {"account_id": "1787788", "status": "ACTIVE", "project_count": 1, "changes_made": 0, "auto_scan": 1, "scans_per_day": 72},
+                {"account_id": "1798665", "status": "ACTIVE", "project_count": 1, "changes_made": 0, "auto_scan": 1, "scans_per_day": 72},
+                {"account_id": "1813037", "status": "ACTIVE", "project_count": 2, "changes_made": 0, "auto_scan": 1, "scans_per_day": 72},
+                {"account_id": "1813041", "status": "ACTIVE", "project_count": 4, "changes_made": 0, "auto_scan": 1, "scans_per_day": 72},
+                {"account_id": "1823276", "status": "ACTIVE", "project_count": 16, "changes_made": 0, "auto_scan": 1, "scans_per_day": 72},
+                {"account_id": "1828308", "status": "ACTIVE", "project_count": 1, "changes_made": 0, "auto_scan": 1, "scans_per_day": 72},
+                {"account_id": "1829970", "status": "ACTIVE", "project_count": 6, "changes_made": 0, "auto_scan": 1, "scans_per_day": 72},
+                {"account_id": "1829976", "status": "ACTIVE", "project_count": 4, "changes_made": 0, "auto_scan": 1, "scans_per_day": 72},
+                {"account_id": "1847769", "status": "ACTIVE", "project_count": 6, "changes_made": 0, "auto_scan": 1, "scans_per_day": 72},
+                {"account_id": "1867619", "status": "ACTIVE", "project_count": 6, "changes_made": 0, "auto_scan": 1, "scans_per_day": 72},
             ]
         }
         
