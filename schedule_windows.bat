@@ -8,16 +8,7 @@ REM Delete existing task if it exists (ignore errors)
 schtasks /delete /tn "GeoEdge_Daily_Reset" /f >nul 2>&1
 
 REM Create the scheduled task
-schtasks /create ^
-    /tn "GeoEdge_Daily_Reset" ^
-    /tr "C:\AF\geoedge-tools\resetgeoEdge\update_and_run.bat" ^
-    /sc daily ^
-    /st 02:00 ^
-    /sd %date% ^
-    /rl HIGHEST ^
-    /ru "%USERNAME%" ^
-    /rp ^
-    /f
+schtasks /create /tn "GeoEdge_Daily_Reset" /tr "C:\AF\geoedge-tools\resetgeoEdge\update_and_run.bat" /sc daily /st 02:00 /rl HIGHEST /f
 
 if %ERRORLEVEL% equ 0 (
     echo.
