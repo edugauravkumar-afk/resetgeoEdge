@@ -53,9 +53,30 @@ python reset_inactive_accounts.py >> "%LOG_FILE%" 2>&1
 if %ERRORLEVEL% equ 0 (
     echo Daily reset completed successfully at %date% %time% >> "%LOG_FILE%"
     echo Daily reset completed successfully at %date% %time%
+    echo Email report will be sent automatically if configured >> "%LOG_FILE%"
 ) else (
     echo ERROR: Daily reset failed at %date% %time% >> "%LOG_FILE%"
     echo Daily reset failed at %date% %time%
+    echo Attempting to send error notification... >> "%LOG_FILE%"
+    python -c "
+try:
+    from email_reporter import GeoEdgeEmailReporter
+    import os
+    reporter = GeoEdgeEmailReporter()
+    reporter.send_daily_reset_report({
+        'status': 'error',
+        'error_message': 'Daily reset script failed with exit code %ERRORLEVEL%',
+        'total_accounts_checked': 0,
+        'inactive_accounts': 0, 
+        'active_accounts': 0,
+        'total_projects_scanned': 0,
+        'projects_reset': 0,
+        'execution_time': 0
+    })
+    print('Error notification sent')
+except Exception as e:
+    print(f'Failed to send error email: {e}')
+" >> "%LOG_FILE%" 2>&1
     exit /b 1
 )
 

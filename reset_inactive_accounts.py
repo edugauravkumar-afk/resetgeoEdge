@@ -16,6 +16,14 @@ from dotenv import load_dotenv
 from geoedge_projects.client import GeoEdgeClient
 import update_autoscan
 
+# Import email reporting
+try:
+    from email_reporter import GeoEdgeEmailReporter
+    EMAIL_AVAILABLE = True
+except ImportError:
+    print("⚠️ Email reporting not available (email_reporter.py not found)")
+    EMAIL_AVAILABLE = False
+
 load_dotenv()
 
 TARGET_ACCOUNTS: Sequence[str] = (
@@ -340,6 +348,7 @@ def load_accounts(path: str | None) -> List[str]:
 
 
 def main() -> int:
+    start_time = time.time()
     args = parse_args()
     account_ids = load_accounts(args.accounts_file)
 
@@ -474,6 +483,63 @@ def main() -> int:
         print("\nFailures:")
         for row in failures:
             print(f" - {row['project_id']} (acct {row['account_id']}): {row['status']} -> {row['detail']}")
+
+    # Send email report if enabled
+    if EMAIL_AVAILABLE and not args.dry_run:
+        try:
+            # Prepare email report data
+            report_data = {
+                "total_accounts_checked": len(statuses),
+                "inactive_accounts": len(frozen_accounts),
+                "active_accounts": len(live_accounts), 
+                "total_projects_scanned": len(results),
+                "projects_reset": reset_count,
+                "execution_time": time.time() - start_time if 'start_time' in locals() else 0,
+                "status": "success" if not failures else "error",
+                "error_message": f"{len(failures)} project updates failed" if failures else None,
+                "inactive_account_details": [],
+                "active_account_details": []
+            }
+            
+            # Build account details for email
+            for acc in frozen_accounts:
+                account_projects = [p for p in frozen_projects if str(p['syndicator_id']) == acc]
+                account_resets = sum(1 for r in results 
+                                   if r.get('account_id') == acc and r.get('status') in {'reset', 'dry-run'})
+                report_data["inactive_account_details"].append({
+                    "account_id": acc,
+                    "status": "INACTIVE", 
+                    "project_count": len(account_projects),
+                    "changes_made": account_resets
+                })
+            
+            for acc in live_accounts:
+                account_projects = [p for p in live_projects if str(p['syndicator_id']) == acc]
+                if account_projects:  # Only include accounts with projects
+                    account_resets = sum(1 for r in results 
+                                       if r.get('account_id') == acc and r.get('status') in {'reset', 'dry-run'})
+                    report_data["active_account_details"].append({
+                        "account_id": acc,
+                        "status": "ACTIVE",
+                        "project_count": len(account_projects), 
+                        "changes_made": account_resets
+                    })
+            
+            # Send email report
+            email_reporter = GeoEdgeEmailReporter()
+            email_sent = email_reporter.send_daily_reset_report(report_data)
+            
+            if email_sent:
+                print("📧 Email report sent successfully")
+            else:
+                print("⚠️ Failed to send email report")
+                
+        except Exception as e:
+            print(f"⚠️ Email reporting error: {str(e)}")
+    elif args.dry_run:
+        print("📧 Email report skipped (dry-run mode)")
+    elif not EMAIL_AVAILABLE:
+        print("📧 Email report skipped (not configured)")
 
     if args.dry_run:
         return 0
