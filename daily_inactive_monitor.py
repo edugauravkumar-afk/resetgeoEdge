@@ -147,7 +147,7 @@ class DailyInactiveMonitor:
             conn.close()
 
     def check_account_activity(self, account_ids):
-        """Check which accounts have been inactive (no alerts in 30+ days)"""
+        """Check which accounts are active vs inactive based on publisher status"""
         if not account_ids:
             return set(), set()
         
@@ -156,21 +156,26 @@ class DailyInactiveMonitor:
         placeholders = ','.join(['%s'] * len(account_list))
         
         query = f"""
-        SELECT DISTINCT account_id
-        FROM alerts_raw 
-        WHERE account_id IN ({placeholders})
-        AND created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+        SELECT syndicator_id as account_id, status
+        FROM trc.publishers 
+        WHERE syndicator_id IN ({placeholders})
         """
         
         try:
             conn = self.get_database_connection()
             with conn.cursor() as cursor:
                 cursor.execute(query, account_list)
-                active_account_results = cursor.fetchall()
+                results = cursor.fetchall()
                 
-                # Extract active account IDs
-                active_accounts = {row[0] for row in active_account_results}
-                inactive_accounts = set(account_ids) - active_accounts
+                # Categorize accounts by status
+                active_accounts = set()
+                inactive_accounts = set()
+                
+                for account_id, status in results:
+                    if status and status.upper() == 'INACTIVE':
+                        inactive_accounts.add(account_id)
+                    else:
+                        active_accounts.add(account_id)
                 
                 return active_accounts, inactive_accounts
                 
