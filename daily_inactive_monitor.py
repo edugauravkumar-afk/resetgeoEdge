@@ -156,9 +156,9 @@ class DailyInactiveMonitor:
         placeholders = ','.join(['%s'] * len(account_list))
         
         query = f"""
-        SELECT syndicator_id as account_id, status
+        SELECT id as account_id, status
         FROM trc.publishers 
-        WHERE syndicator_id IN ({placeholders})
+        WHERE id IN ({placeholders})
         """
         
         try:
