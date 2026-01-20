@@ -33,9 +33,18 @@ try:
     
     # Test a simple query
     with conn.cursor() as cursor:
-        cursor.execute("SELECT COUNT(*) FROM project_config WHERE auto_scan = 1 AND times_per_day = 72")
+        cursor.execute("""
+            SELECT COUNT(DISTINCT gep.project_id)
+            FROM trc.geo_edge_projects AS gep
+            JOIN trc.sp_campaigns sc ON gep.campaign_id = sc.id
+            JOIN trc.sp_campaign_inventory_instructions sii ON gep.campaign_id = sii.campaign_id
+            WHERE sii.instruction_status = 'ACTIVE'
+              AND gep.creation_date >= '2025-10-01'
+              AND gep.creation_date <= '2025-11-30'
+              AND CONCAT(',', REPLACE(COALESCE(gep.locations, ''), ' ', ''), ',') REGEXP ',(IT|FR|DE|ES),'
+        """)
         count = cursor.fetchone()[0]
-        print(f"✅ Query successful! Found {count} projects with Auto Mode (1,72)")
+        print(f"✅ Query successful! Found {count} configured projects")
     
     conn.close()
     print("✅ All tests passed!")

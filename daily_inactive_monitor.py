@@ -113,12 +113,18 @@ class DailyInactiveMonitor:
     def get_all_configured_accounts(self):
         """Get all accounts with Auto Mode projects (1,72)"""
         query = """
-        SELECT DISTINCT account_id,
-               COUNT(*) as project_count
-        FROM project_config 
-        WHERE auto_scan = 1 AND times_per_day = 72
-        GROUP BY account_id
-        ORDER BY account_id
+        SELECT DISTINCT
+            sc.syndicator_id as account_id,
+            COUNT(DISTINCT gep.project_id) as project_count
+        FROM trc.geo_edge_projects AS gep
+        JOIN trc.sp_campaigns sc ON gep.campaign_id = sc.id
+        JOIN trc.sp_campaign_inventory_instructions sii ON gep.campaign_id = sii.campaign_id
+        WHERE sii.instruction_status = 'ACTIVE'
+          AND gep.creation_date >= '2025-10-01'
+          AND gep.creation_date <= '2025-11-30'
+          AND CONCAT(',', REPLACE(COALESCE(gep.locations, ''), ' ', ''), ',') REGEXP ',(IT|FR|DE|ES),'
+        GROUP BY sc.syndicator_id
+        ORDER BY sc.syndicator_id
         """
         
         try:
@@ -183,11 +189,16 @@ class DailyInactiveMonitor:
         placeholders = ','.join(['%s'] * len(account_list))
         
         query = f"""
-        SELECT account_id, project_id
-        FROM project_config 
-        WHERE account_id IN ({placeholders})
-        AND auto_scan = 1 AND times_per_day = 72
-        ORDER BY account_id, project_id
+        SELECT sc.syndicator_id as account_id, gep.project_id
+        FROM trc.geo_edge_projects AS gep
+        JOIN trc.sp_campaigns sc ON gep.campaign_id = sc.id
+        JOIN trc.sp_campaign_inventory_instructions sii ON gep.campaign_id = sii.campaign_id
+        WHERE sc.syndicator_id IN ({placeholders})
+          AND sii.instruction_status = 'ACTIVE'
+          AND gep.creation_date >= '2025-10-01'
+          AND gep.creation_date <= '2025-11-30'
+          AND CONCAT(',', REPLACE(COALESCE(gep.locations, ''), ' ', ''), ',') REGEXP ',(IT|FR|DE|ES),'
+        ORDER BY sc.syndicator_id, gep.project_id
         """
         
         try:
