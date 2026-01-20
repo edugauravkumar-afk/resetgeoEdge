@@ -115,7 +115,7 @@ class DailyInactiveMonitor:
         query = """
         SELECT DISTINCT account_id,
                COUNT(*) as project_count
-        FROM TRC.project_config 
+        FROM project_config 
         WHERE auto_scan = 1 AND times_per_day = 72
         GROUP BY account_id
         ORDER BY account_id
@@ -151,7 +151,7 @@ class DailyInactiveMonitor:
         
         query = f"""
         SELECT DISTINCT account_id
-        FROM TRC.alerts_raw 
+        FROM alerts_raw 
         WHERE account_id IN ({placeholders})
         AND created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
         """
@@ -184,7 +184,7 @@ class DailyInactiveMonitor:
         
         query = f"""
         SELECT account_id, project_id
-        FROM TRC.project_config 
+        FROM project_config 
         WHERE account_id IN ({placeholders})
         AND auto_scan = 1 AND times_per_day = 72
         ORDER BY account_id, project_id
