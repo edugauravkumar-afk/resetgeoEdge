@@ -52,49 +52,40 @@ class GeoEdgeDailyService:
     def run_daily_check(self):
         """Execute the daily monitoring and reporting"""
         try:
-            logger.info("🔍 Starting daily account status check...")
+            logger.info("🔍 Starting daily Auto Mode account check...")
             
-            # Check for newly inactive accounts
+            # Check for Auto Mode accounts that became inactive and reset them
             results = self.monitor.monitor_status_changes()
             
-            # Prepare report data for email
-            accounts_reset = []
-            total_projects_reset = 0
+            # Get accounts that were actually reset
+            accounts_reset = results.get('accounts_reset', [])
+            total_projects_reset = results.get('total_projects_reset', 0)
+            auto_mode_accounts_monitored = results.get('auto_mode_accounts_monitored', 0)
             
-            # If there are newly inactive accounts, prepare their data for email
-            if results['newly_inactive_accounts']:
-                priority_accounts = [str(acc['id']) for acc in results['newly_inactive_accounts']]
-                logger.info(f"📋 PRIORITY ACCOUNT IDs FOR IMMEDIATE RESET: {','.join(priority_accounts)}")
+            if accounts_reset:
+                logger.info(f"🚨 Found {len(accounts_reset)} Auto Mode accounts that became inactive")
+                logger.info(f"🔧 Reset {total_projects_reset} projects from Auto (1,72) to Manual (0,0)")
                 
-                # Convert to email format
-                for acc in results['newly_inactive_accounts']:
-                    account_data = {
-                        'account_id': str(acc['id']),
-                        'account_name': acc.get('name', 'Unknown'),
-                        'status': 'PRIORITY_NEWLY_INACTIVE',
-                        'auto_scan': 0,
-                        'scans_per_day': 0,
-                        'total_projects': acc.get('project_count', 0),
-                        'projects_reset': acc.get('project_count', 0),
-                        'project_count': acc.get('project_count', 0)
-                    }
-                    accounts_reset.append(account_data)
-                    total_projects_reset += acc.get('project_count', 0)
-                
-                logger.info(f"🚨 Found {len(accounts_reset)} priority accounts with {total_projects_reset} projects to reset")
+                # Log the specific accounts reset
+                for account in accounts_reset:
+                    logger.info(f"   Reset Account {account['account_id']}: {account['projects_reset']} projects")
             else:
-                logger.info("✅ No newly inactive accounts found")
+                logger.info("✅ No Auto Mode accounts became inactive")
             
             # Always send daily report
-            logger.info("📧 Sending daily report...")
+            logger.info("📧 Sending daily Auto Mode monitoring report...")
             
             report_data = {
                 'status': 'success',
                 'accounts_reset': accounts_reset,
                 'total_projects_reset': total_projects_reset,
-            'projects_reset': total_projects_reset,  # Actual projects that were reset
-            'execution_time': 2.5,
-            'total_accounts_monitored': 968246,  # Total accounts in the system being monitored
+                'projects_reset': total_projects_reset,  # Actual projects reset
+                'execution_time': 2.5,
+                'total_accounts_monitored': auto_mode_accounts_monitored,  # Only Auto Mode accounts
+                'inactive_accounts': len(accounts_reset),
+                'active_accounts': auto_mode_accounts_monitored - len(accounts_reset),
+                'projects_scanned': sum(acc.get('projects_reset', 0) for acc in accounts_reset),
+                'timestamp': datetime.now().isoformat()
             }
             
             email_sent = self.reporter.send_daily_reset_report(report_data)

@@ -336,16 +336,15 @@ class GeoEdgeEmailReporter:
             accounts_reset = report_data.get("accounts_reset", [])
             recent_accounts = self._filter_recent_changes(accounts_reset)
             
-            # Calculate meaningful statistics
-            total_accounts_monitored = report_data.get("total_accounts_monitored", 968246)  # From monitoring baseline
+            # Calculate meaningful statistics for Auto Mode monitoring
+            total_accounts_monitored = report_data.get("total_accounts_monitored", 0)  # Only Auto Mode accounts
             newly_inactive_count = len(recent_accounts)
             total_projects_in_changed_accounts = sum(acc.get("total_projects", 0) for acc in recent_accounts)
             projects_actually_reset = projects_reset  # This should be the actual count of projects that needed changes
             
             stats = {
-                "Accounts Monitored": f"{total_accounts_monitored:,}",
-                "Newly Inactive": newly_inactive_count,
-                "Projects Reviewed": total_projects_in_changed_accounts,
+                "Auto Mode Accounts": f"{total_accounts_monitored:,}",  # Only monitoring Auto Mode accounts now
+                "Became Inactive": newly_inactive_count,
                 "Projects Reset": projects_actually_reset,
                 "Changes Needed": "Yes" if projects_actually_reset > 0 else "No",
                 "Execution Time": f"{report_data.get('execution_time', 2.5):.1f}s"
@@ -450,7 +449,7 @@ class GeoEdgeEmailReporter:
             main_content = "".join(content_parts)
             
             html_content = self.builder.build_geoedge_email(
-                title="GeoEdge Daily Reset Report",
+                title="GeoEdge Auto Mode Monitoring Report",
                 greeting="Hi team,",
                 main_content=main_content
             )
@@ -478,18 +477,18 @@ class GeoEdgeEmailReporter:
             
             # Adjust subject line based on whether there are recent changes
             if not recent_accounts:
-                subject = f"✅ GeoEdge Project Config Monitor - No Changes Detected ({date_str})"
+                subject = f"✅ GeoEdge Auto Mode Monitor - No Changes Detected ({date_str})"
             elif status == "success":
                 if projects_reset > 0:
                     priority_count = len([acc for acc in recent_accounts if "PRIORITY" in acc.get("status", "")])
                     if priority_count > 0:
-                        subject = f"🚨 GeoEdge Project Config Monitor - {priority_count} Priority Alerts ({projects_reset} Projects Reset) ({date_str})"
+                        subject = f"🚨 GeoEdge Auto Mode Monitor - {priority_count} Auto Mode Accounts Inactive ({projects_reset} Projects Reset) ({date_str})"
                     else:
-                        subject = f"🔧 GeoEdge Project Config Monitor - {projects_reset} Projects Reset ({date_str})"
+                        subject = f"🔧 GeoEdge Auto Mode Monitor - {projects_reset} Projects Reset ({date_str})"
                 else:
-                    subject = f"✅ GeoEdge Project Config Monitor - All Accounts Properly Configured ({date_str})"
+                    subject = f"✅ GeoEdge Auto Mode Monitor - All Auto Mode Accounts Active ({date_str})"
             else:
-                subject = f"❌ GeoEdge Project Config Monitor - System Error Detected ({date_str})"
+                subject = f"❌ GeoEdge Auto Mode Monitor - System Error Detected ({date_str})"
             
             csv_filename = f"geoedge_reset_report_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M')}.csv"
             
