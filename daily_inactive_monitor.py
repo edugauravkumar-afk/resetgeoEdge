@@ -37,10 +37,12 @@ class DailyInactiveMonitor:
     def __init__(self):
         self.db_config = {
             'host': os.getenv('DB_HOST'),
+            'port': int(os.getenv('DB_PORT', 6033)),
             'user': os.getenv('DB_USER'),
             'password': os.getenv('DB_PASSWORD'),
             'database': os.getenv('DB_NAME'),
-            'charset': 'utf8mb4'
+            'charset': 'utf8mb4',
+            'client_flag': pymysql.constants.CLIENT.PLUGIN_AUTH
         }
         
         self.geoedge_config = {
