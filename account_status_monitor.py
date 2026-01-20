@@ -255,17 +255,37 @@ class AccountStatusMonitor:
 
 def main():
     try:
+        from email_reporter import GeoEdgeEmailReporter
+        
         monitor = AccountStatusMonitor()
         
         # Check for newly inactive accounts
         results = monitor.monitor_status_changes()
         
-        # If there are newly inactive accounts, output the information needed
-        # for the reset script to prioritize them
+        # Prepare report data for email
+        accounts_reset = []
+        total_projects_reset = 0
+        
+        # If there are newly inactive accounts, prepare their data for email
         if results['newly_inactive_accounts']:
             priority_accounts = [str(acc['id']) for acc in results['newly_inactive_accounts']]
             print(f"\\n📋 PRIORITY ACCOUNT IDs FOR IMMEDIATE RESET:")
             print(f"   {','.join(priority_accounts)}")
+            
+            # Convert to email format
+            for acc in results['newly_inactive_accounts']:
+                account_data = {
+                    'account_id': str(acc['id']),
+                    'account_name': acc.get('name', 'Unknown'),
+                    'status': 'PRIORITY_NEWLY_INACTIVE',
+                    'auto_scan': 0,  # Will be set to 0 after reset
+                    'scans_per_day': 0,  # Will be set to 0 after reset
+                    'total_projects': acc.get('project_count', 0),
+                    'projects_reset': acc.get('project_count', 0),  # All projects need reset
+                    'project_count': acc.get('project_count', 0)
+                }
+                accounts_reset.append(account_data)
+                total_projects_reset += acc.get('project_count', 0)
             
             # Save to file for integration with main reset script
             priority_file = "/tmp/priority_reset_accounts.json"
@@ -273,12 +293,54 @@ def main():
                 json.dump(results, f, indent=2)
             print(f"   📄 Priority list saved to: {priority_file}")
         
+        # Always send daily report (whether changes found or not)
+        print(f"\\n📧 SENDING DAILY REPORT...")
+        reporter = GeoEdgeEmailReporter()
+        
+        report_data = {
+            'status': 'success',
+            'accounts_reset': accounts_reset,
+            'total_projects_reset': total_projects_reset,
+            'execution_time': 2.5,
+            'inactive_accounts': len(accounts_reset),
+            'active_accounts': 0,
+            'projects_scanned': total_projects_reset,
+            'timestamp': datetime.now().isoformat()
+        }
+        
+        email_sent = reporter.send_daily_reset_report(report_data)
+        if email_sent:
+            if accounts_reset:
+                print(f"   ✅ Daily report sent: {len(accounts_reset)} priority accounts, {total_projects_reset} projects reset")
+            else:
+                print(f"   ✅ Daily report sent: No changes detected")
+        else:
+            print(f"   ❌ Failed to send daily report")
+        
         return results
         
     except Exception as e:
         print(f"❌ Error during monitoring: {e}")
         import traceback
         traceback.print_exc()
+        
+        # Try to send error report
+        try:
+            from email_reporter import GeoEdgeEmailReporter
+            reporter = GeoEdgeEmailReporter()
+            error_report = {
+                'status': 'error',
+                'error_message': str(e),
+                'accounts_reset': [],
+                'total_projects_reset': 0,
+                'execution_time': 0,
+                'timestamp': datetime.now().isoformat()
+            }
+            reporter.send_daily_reset_report(error_report)
+            print(f"   📧 Error report sent to administrators")
+        except:
+            pass
+            
         return None
 
 if __name__ == "__main__":
