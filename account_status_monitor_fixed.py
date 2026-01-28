@@ -142,7 +142,7 @@ class AccountStatusMonitor:
             db.close()
 
     def get_apnews_account_statuses(self) -> Dict[str, Any]:
-        """Get APNews account statuses from APNews.csv"""
+        """Get APNews account statuses from APNews.csv (including last 24h)"""
         try:
             df = pd.read_csv('APNews.csv')
             if 'IDs' in df.columns:
@@ -176,8 +176,10 @@ class AccountStatusMonitor:
 
             status_map = {row['id']: row for row in results}
             inactive_statuses = {'inactive', 'paused', 'suspended', 'frozen'}
+            cutoff_time = datetime.now() - timedelta(hours=24)
 
             inactive_accounts = []
+            newly_inactive_accounts = []
             unknown_accounts = 0
 
             for account_id in account_ids:
@@ -188,15 +190,22 @@ class AccountStatusMonitor:
 
                 status = (info.get('status') or '').lower()
                 if status in inactive_statuses:
-                    inactive_accounts.append({
+                    account_entry = {
                         'account_id': str(info.get('id')),
                         'account_name': info.get('name'),
                         'status': info.get('status')
-                    })
+                    }
+                    inactive_accounts.append(account_entry)
+
+                    update_time = info.get('update_time')
+                    if update_time and update_time >= cutoff_time:
+                        newly_inactive_accounts.append(account_entry)
 
             return {
                 'apnews_accounts_monitored': len(account_ids),
                 'apnews_inactive_count': len(inactive_accounts),
+                'apnews_newly_inactive_count': len(newly_inactive_accounts),
+                'apnews_newly_inactive_accounts': newly_inactive_accounts,
                 'apnews_inactive_accounts': inactive_accounts,
                 'apnews_unknown_count': unknown_accounts
             }
@@ -206,6 +215,8 @@ class AccountStatusMonitor:
             return {
                 'apnews_accounts_monitored': 0,
                 'apnews_inactive_count': 0,
+                'apnews_newly_inactive_count': 0,
+                'apnews_newly_inactive_accounts': [],
                 'apnews_inactive_accounts': [],
                 'apnews_unknown_count': 0
             }
@@ -512,7 +523,8 @@ class AccountStatusMonitor:
         logger.info("-" * 40)
         apnews_results = self.get_apnews_account_statuses()
         logger.info(f"APNews accounts monitored: {apnews_results.get('apnews_accounts_monitored', 0)}")
-        logger.info(f"APNews inactive accounts: {apnews_results.get('apnews_inactive_count', 0)}")
+        logger.info(f"APNews inactive accounts (total): {apnews_results.get('apnews_inactive_count', 0)}")
+        logger.info(f"APNews became inactive (last 24h): {apnews_results.get('apnews_newly_inactive_count', 0)}")
         logger.info(f"APNews unknown accounts: {apnews_results.get('apnews_unknown_count', 0)}")
         
         # Combine results
@@ -534,6 +546,8 @@ class AccountStatusMonitor:
             # APNews account status results
             'apnews_accounts_monitored': apnews_results.get('apnews_accounts_monitored', 0),
             'apnews_inactive_count': apnews_results.get('apnews_inactive_count', 0),
+            'apnews_newly_inactive_count': apnews_results.get('apnews_newly_inactive_count', 0),
+            'apnews_newly_inactive_accounts': apnews_results.get('apnews_newly_inactive_accounts', []),
             'apnews_inactive_accounts': apnews_results.get('apnews_inactive_accounts', []),
             'apnews_unknown_count': apnews_results.get('apnews_unknown_count', 0),
             

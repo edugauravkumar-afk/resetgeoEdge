@@ -337,10 +337,11 @@ class GeoEdgeEmailReporter:
             apcampaign_reset_success = report_data.get("apcampaign_reset_success", 0)
             apcampaign_reset_failures = report_data.get("apcampaign_reset_failures", 0)
 
-            # APNews account status data
+            # APNews account status data (24h)
             apnews_accounts_monitored = report_data.get("apnews_accounts_monitored", 0)
             apnews_inactive_count = report_data.get("apnews_inactive_count", 0)
-            apnews_inactive_accounts = report_data.get("apnews_inactive_accounts", [])
+            apnews_newly_inactive_count = report_data.get("apnews_newly_inactive_count", 0)
+            apnews_newly_inactive_accounts = report_data.get("apnews_newly_inactive_accounts", [])
             apnews_unknown_count = report_data.get("apnews_unknown_count", 0)
             
             # Combined totals
@@ -355,9 +356,9 @@ class GeoEdgeEmailReporter:
                 "Auto Mode (1,72) Accounts Monitored": f"{auto_mode_accounts_monitored:,}",
                 "APcampaign Projects Monitored": f"{apcampaign_projects_monitored:,}",
                 "APNews Accounts Monitored": f"{apnews_accounts_monitored:,}",
-                "Auto Mode Became Inactive": auto_mode_inactive,
+                "Auto Mode Became Inactive (24h)": auto_mode_inactive,
                 "APcampaign Became Inactive": apcampaign_inactive,
-                "APNews Inactive": apnews_inactive_count,
+                "APNews Became Inactive (24h)": apnews_newly_inactive_count,
                 "Auto Mode Projects Reset": auto_mode_projects_reset,
                 "APcampaign Projects Reset": apcampaign_projects_reset,
                 "APNews Unknown": apnews_unknown_count,
@@ -451,12 +452,12 @@ class GeoEdgeEmailReporter:
                 content_parts.append(apcampaign_table_html)
 
             # Process APNews account status
-            if apnews_inactive_accounts:
-                apnews_table_html = self._build_apnews_table(apnews_inactive_accounts, apnews_accounts_monitored, apnews_unknown_count)
+            if apnews_newly_inactive_accounts:
+                apnews_table_html = self._build_apnews_table(apnews_newly_inactive_accounts, apnews_accounts_monitored, apnews_unknown_count)
                 content_parts.append(apnews_table_html)
             
             # If no changes at all, show minimal summary
-            if not recent_auto_accounts and not apcampaign_accounts_reset and not apnews_inactive_accounts:
+            if not recent_auto_accounts and not apcampaign_accounts_reset and not apnews_newly_inactive_accounts:
                 content_parts = [
                     content_parts[0],  # Keep the header
                     """
@@ -465,11 +466,11 @@ class GeoEdgeEmailReporter:
                     <div style="font-size: 14px; color: #388e3c; line-height: 1.6;">
                         Auto Mode: All {0} accounts remain properly configured.<br>
                         APcampaign: All {1} projects remain properly configured.<br>
-                        APNews: {2} accounts monitored ({3} inactive, {4} unknown).<br>
+                        APNews: {2} accounts monitored ({3} inactive in last 24h, {4} unknown).<br>
                         <strong>Comprehensive monitoring is working correctly.</strong>
                     </div>
                 </div>
-                """.format(auto_mode_accounts_monitored, apcampaign_projects_monitored, apnews_accounts_monitored, apnews_inactive_count, apnews_unknown_count)
+                """.format(auto_mode_accounts_monitored, apcampaign_projects_monitored, apnews_accounts_monitored, apnews_newly_inactive_count, apnews_unknown_count)
                 ]
             
             # Build final email
@@ -517,7 +518,7 @@ class GeoEdgeEmailReporter:
                 })
 
             # Add APNews inactive account data
-            for account in apnews_inactive_accounts:
+            for account in apnews_newly_inactive_accounts:
                 csv_data.append({
                     "Monitoring Type": "APNews Accounts",
                     "Account ID": account.get("account_id"),
@@ -606,7 +607,7 @@ class GeoEdgeEmailReporter:
     def _build_apnews_table(self, apnews_accounts: List[Dict], total_monitored: int, unknown_count: int) -> str:
         """Build HTML table for APNews inactive accounts"""
 
-        title = f"📰 APNews Inactive Accounts - {len(apnews_accounts)} Inactive (Total: {total_monitored}, Unknown: {unknown_count})"
+        title = f"📰 APNews Inactive Accounts (Last 24h) - {len(apnews_accounts)} Inactive (Total: {total_monitored}, Unknown: {unknown_count})"
 
         rows = ""
         for account in apnews_accounts:
