@@ -2,7 +2,7 @@
 """
 Auto Mode Account Status Monitor - Fixed Version
 This version uses the correct database schema with geo_edge_projects table
-Now also monitors APcampaign accounts (1,12 to 0,0)
+Now also monitors APcampaign accounts (1,12 to 0,0) and APNews status
 """
 
 import os
@@ -23,7 +23,7 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 class AccountStatusMonitor:
-    """Monitor Auto Mode (1,72) accounts for inactivity and reset them + APcampaign (1,12) monitoring"""
+    """Monitor Auto Mode (1,72) accounts for inactivity and reset them + APcampaign (1,12) monitoring + APNews status"""
     
     def __init__(self):
         self.db_config = {
@@ -140,6 +140,75 @@ class AccountStatusMonitor:
         finally:
             cursor.close()
             db.close()
+
+    def get_apnews_account_statuses(self) -> Dict[str, Any]:
+        """Get APNews account statuses from APNews.csv"""
+        try:
+            df = pd.read_csv('APNews.csv')
+            if 'IDs' in df.columns:
+                account_ids = df['IDs'].dropna().astype(int).tolist()
+            else:
+                account_ids = df.iloc[:, 0].dropna().astype(int).tolist()
+
+            if not account_ids:
+                return {
+                    'apnews_accounts_monitored': 0,
+                    'apnews_inactive_count': 0,
+                    'apnews_inactive_accounts': [],
+                    'apnews_unknown_count': 0
+                }
+
+            db = self._get_db_connection()
+            cursor = db.cursor(pymysql.cursors.DictCursor)
+
+            try:
+                placeholders = ','.join(['%s'] * len(account_ids))
+                cursor.execute(f"""
+                    SELECT id, name, status
+                    FROM trc.publishers
+                    WHERE id IN ({placeholders})
+                """, account_ids)
+
+                results = cursor.fetchall()
+            finally:
+                cursor.close()
+                db.close()
+
+            status_map = {row['id']: row for row in results}
+            inactive_statuses = {'inactive', 'paused', 'suspended', 'frozen'}
+
+            inactive_accounts = []
+            unknown_accounts = 0
+
+            for account_id in account_ids:
+                info = status_map.get(account_id)
+                if not info:
+                    unknown_accounts += 1
+                    continue
+
+                status = (info.get('status') or '').lower()
+                if status in inactive_statuses:
+                    inactive_accounts.append({
+                        'account_id': str(info.get('id')),
+                        'account_name': info.get('name'),
+                        'status': info.get('status')
+                    })
+
+            return {
+                'apnews_accounts_monitored': len(account_ids),
+                'apnews_inactive_count': len(inactive_accounts),
+                'apnews_inactive_accounts': inactive_accounts,
+                'apnews_unknown_count': unknown_accounts
+            }
+
+        except Exception as e:
+            logger.error(f"❌ Error getting APNews account statuses: {e}")
+            return {
+                'apnews_accounts_monitored': 0,
+                'apnews_inactive_count': 0,
+                'apnews_inactive_accounts': [],
+                'apnews_unknown_count': 0
+            }
     
     def get_apcampaign_project_mapping(self):
         """Get project IDs for campaigns from APcampaign.csv"""
@@ -437,6 +506,14 @@ class AccountStatusMonitor:
                 'apcampaign_reset_failures': 0,
                 'timestamp': datetime.now().isoformat()
             }
+
+        # 3. APNews account status summary
+        logger.info("\n🎯 PHASE 3: APNews Account Status Summary")
+        logger.info("-" * 40)
+        apnews_results = self.get_apnews_account_statuses()
+        logger.info(f"APNews accounts monitored: {apnews_results.get('apnews_accounts_monitored', 0)}")
+        logger.info(f"APNews inactive accounts: {apnews_results.get('apnews_inactive_count', 0)}")
+        logger.info(f"APNews unknown accounts: {apnews_results.get('apnews_unknown_count', 0)}")
         
         # Combine results
         combined_results = {
@@ -453,6 +530,12 @@ class AccountStatusMonitor:
             'apcampaign_newly_inactive_count': apcampaign_results.get('apcampaign_newly_inactive_count', 0),
             'apcampaign_reset_success': apcampaign_results.get('apcampaign_reset_success', 0),
             'apcampaign_reset_failures': apcampaign_results.get('apcampaign_reset_failures', 0),
+
+            # APNews account status results
+            'apnews_accounts_monitored': apnews_results.get('apnews_accounts_monitored', 0),
+            'apnews_inactive_count': apnews_results.get('apnews_inactive_count', 0),
+            'apnews_inactive_accounts': apnews_results.get('apnews_inactive_accounts', []),
+            'apnews_unknown_count': apnews_results.get('apnews_unknown_count', 0),
             
             # Combined totals
             'total_accounts_monitored': auto_mode_count + apcampaign_results.get('apcampaign_projects_monitored', 0),
@@ -472,6 +555,9 @@ class AccountStatusMonitor:
         logger.info(f"APcampaign projects monitored: {apcampaign_results.get('apcampaign_projects_monitored', 0)}")
         logger.info(f"APcampaign accounts became inactive: {apcampaign_results.get('apcampaign_newly_inactive_count', 0)}")
         logger.info(f"APcampaign projects reset: {apcampaign_results.get('apcampaign_projects_reset', 0)}")
+        logger.info(f"APNews accounts monitored: {apnews_results.get('apnews_accounts_monitored', 0)}")
+        logger.info(f"APNews inactive accounts: {apnews_results.get('apnews_inactive_count', 0)}")
+        logger.info(f"APNews unknown accounts: {apnews_results.get('apnews_unknown_count', 0)}")
         logger.info(f"TOTAL inactive accounts found: {combined_results['total_inactive_found']}")
         logger.info(f"TOTAL projects reset: {combined_results['total_all_projects_reset']}")
         

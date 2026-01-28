@@ -310,187 +310,247 @@ class GeoEdgeEmailReporter:
     
     def send_daily_reset_report(self, report_data: Dict[str, Any]) -> bool:
         """
-        Send daily reset report email.
+        Send comprehensive daily reset report email for both Auto Mode (1,72) and APcampaign (1,12) monitoring.
         
         Args:
-            report_data: Dictionary containing:
-                - total_accounts_checked: int
-                - inactive_accounts: int  
-                - active_accounts: int
-                - total_projects_scanned: int
-                - projects_reset: int
-                - inactive_account_details: List[Dict]
-                - active_account_details: List[Dict] 
-                - execution_time: float
-                - status: "success" | "error"
-                - error_message: str (if status is error)
+            report_data: Dictionary containing both monitoring results:
+                - Auto Mode (1,72) monitoring data
+                - APcampaign (1,12) monitoring data
+                - Combined statistics
         """
         
         try:
-            # Determine overall status
+            # Extract both monitoring results
             status = report_data.get("status", "success")
-            projects_reset = report_data.get("projects_reset", 0)
             
-            # Build summary statistics
-            # Build summary statistics with enhanced data
+            # Auto Mode (1,72) data
+            auto_mode_accounts_monitored = report_data.get("auto_mode_accounts_monitored", 0)
+            auto_mode_projects_reset = report_data.get("total_projects_reset", 0)
+            auto_mode_inactive = report_data.get("newly_inactive_count", 0)
             accounts_reset = report_data.get("accounts_reset", [])
-            recent_accounts = self._filter_recent_changes(accounts_reset)
             
-            # Calculate meaningful statistics for Auto Mode monitoring
-            total_accounts_monitored = report_data.get("total_accounts_monitored", 0)  # Only Auto Mode accounts
-            newly_inactive_count = len(recent_accounts)
-            total_projects_in_changed_accounts = sum(acc.get("total_projects", 0) for acc in recent_accounts)
-            projects_actually_reset = projects_reset  # This should be the actual count of projects that needed changes
+            # APcampaign (1,12) data
+            apcampaign_projects_monitored = report_data.get("apcampaign_projects_monitored", 0)
+            apcampaign_projects_reset = report_data.get("apcampaign_projects_reset", 0)
+            apcampaign_inactive = report_data.get("apcampaign_newly_inactive_count", 0)
+            apcampaign_accounts_reset = report_data.get("apcampaign_accounts_reset", [])
+            apcampaign_reset_success = report_data.get("apcampaign_reset_success", 0)
+            apcampaign_reset_failures = report_data.get("apcampaign_reset_failures", 0)
+
+            # APNews account status data
+            apnews_accounts_monitored = report_data.get("apnews_accounts_monitored", 0)
+            apnews_inactive_count = report_data.get("apnews_inactive_count", 0)
+            apnews_inactive_accounts = report_data.get("apnews_inactive_accounts", [])
+            apnews_unknown_count = report_data.get("apnews_unknown_count", 0)
+            
+            # Combined totals
+            total_accounts_monitored = report_data.get("total_accounts_monitored", auto_mode_accounts_monitored + apcampaign_projects_monitored)
+            total_inactive_found = report_data.get("total_inactive_found", auto_mode_inactive + apcampaign_inactive)
+            total_all_projects_reset = report_data.get("total_all_projects_reset", auto_mode_projects_reset + apcampaign_projects_reset)
+            
+            # Build enhanced summary statistics
+            recent_auto_accounts = self._filter_recent_changes(accounts_reset)
             
             stats = {
-                "Auto Mode Accounts": f"{total_accounts_monitored:,}",  # Only monitoring Auto Mode accounts now
-                "Became Inactive": newly_inactive_count,
-                "Projects Reset": projects_actually_reset,
-                "Changes Needed": "Yes" if projects_actually_reset > 0 else "No",
-                "Execution Time": f"{report_data.get('execution_time', 2.5):.1f}s"
+                "Auto Mode (1,72) Accounts Monitored": f"{auto_mode_accounts_monitored:,}",
+                "APcampaign Projects Monitored": f"{apcampaign_projects_monitored:,}",
+                "APNews Accounts Monitored": f"{apnews_accounts_monitored:,}",
+                "Auto Mode Became Inactive": auto_mode_inactive,
+                "APcampaign Became Inactive": apcampaign_inactive,
+                "APNews Inactive": apnews_inactive_count,
+                "Auto Mode Projects Reset": auto_mode_projects_reset,
+                "APcampaign Projects Reset": apcampaign_projects_reset,
+                "APNews Unknown": apnews_unknown_count,
+                "Total Changes Made": "Yes" if total_all_projects_reset > 0 else "No",
+                "Execution Time": f"{report_data.get('execution_time', 5.0):.1f}s"
             }
             
             # Build main content
             content_parts = []
             
-            # Check if there are any recent changes first
-            accounts_reset = report_data.get("accounts_reset", [])
-            recent_accounts = self._filter_recent_changes(accounts_reset)
+            # Add header explaining dual monitoring
+            content_parts.append("""
+            <div style="background-color: #f3e5f5; border: 1px solid #9c27b0; padding: 15px; margin: 20px 0; border-radius: 6px;">
+                <h4 style="margin: 0 0 10px 0; color: #6a1b9a;">🔍 Comprehensive GeoEdge Monitoring</h4>
+                <div style="font-size: 13px; color: #7b1fa2; line-height: 1.5;">
+                    This report covers <strong>multi-source monitoring</strong>:<br>
+                    • <strong>Auto Mode accounts (1,72 → 0,0)</strong>: Legacy high-frequency scanning accounts<br>
+                    • <strong>APcampaign accounts (1,12 → 0,0)</strong>: Current campaign-based scanning accounts<br>
+                    • <strong>APNews accounts</strong>: Daily status visibility from APNews.csv
+                </div>
+            </div>
+            """)
             
-            # Only add summary stats if there are recent changes
-            if recent_accounts:
+            # Add summary stats if there are any changes
+            if total_all_projects_reset > 0 or total_inactive_found > 0:
                 content_parts.append(self.builder.build_summary_stats(stats))
             
-                # Add status message and configuration details only if there are recent changes
-            if recent_accounts:
-                if status == "success":
-                    if projects_reset > 0:
-                        content_parts.append(
-                            self.builder.build_success_message(
-                                "Daily reset completed with configuration updates",
-                                f"Reset {projects_reset} projects from Auto-Scan (1,72) to Manual Mode (0,0). "
-                                f"This disables automatic scanning for inactive accounts to save resources."
-                            )
-                        )
-                    else:
-                        # Calculate totals from recent accounts instead of old data
-                        total_recent_projects = sum(acc.get("total_projects", 0) for acc in recent_accounts)
-                        content_parts.append(
-                            self.builder.build_success_message(
-                                "Daily reset completed - recent accounts properly configured",
-                                f"Processed {len(recent_accounts)} accounts with {total_recent_projects} projects. "
-                                f"All inactive accounts are now set to Manual Mode (0,0) - no scanning will occur."
-                            )
-                        )
-                else:
-                    error_msg = report_data.get("error_message", "Unknown error occurred")
+            # Add status messages based on results
+            if status == "success":
+                if total_all_projects_reset > 0:
                     content_parts.append(
-                        self.builder.build_error_message("Daily reset failed", error_msg)
+                        self.builder.build_success_message(
+                            "Comprehensive daily reset completed with configuration updates",
+                            f"Auto Mode: Reset {auto_mode_projects_reset} projects from (1,72) to (0,0). "
+                            f"APcampaign: Reset {apcampaign_projects_reset} projects from (1,12) to (0,0). "
+                            f"Total: {total_all_projects_reset} projects disabled for inactive accounts."
+                        )
                     )
-                
-                # Add configuration explanation only when there are changes
-                content_parts.append("""
-                <div style="background-color: #e3f2fd; border: 1px solid #2196f3; padding: 15px; margin: 20px 0; border-radius: 6px;">
-                    <h4 style="margin: 0 0 10px 0; color: #1565c0;">📋 Configuration Explained</h4>
-                    <div style="font-size: 13px; color: #1976d2; line-height: 1.5;">
-                        <strong>Manual Mode (0,0):</strong> Auto-Scan = 0 (OFF), Scans Per Day = 0 (No scanning)<br>
-                        <strong>Auto Mode (1,72):</strong> Auto-Scan = 1 (ON), Scans Per Day = 72 (Full scanning)<br><br>
-                        <em>Inactive accounts should use Manual Mode (0,0) to prevent unnecessary resource usage and costs.</em>
-                    </div>
-                </div>
-                """)
-            
-            # Filter to only accounts with actual changes or recent activity
-            recent_accounts = self._filter_recent_changes(accounts_reset)
-            
-            # If no recent changes, show minimal summary and skip detailed sections
-            if not recent_accounts:
-                content_parts = ["""
-                <div style="background-color: #e8f5e8; border: 1px solid #4caf50; padding: 20px; margin: 20px 0; border-radius: 6px; text-align: center;">
-                    <h3 style="margin: 0 0 15px 0; color: #2e7d32;">✅ No Account Changes Detected</h3>
-                    <div style="font-size: 14px; color: #388e3c; line-height: 1.6;">
-                        All inactive accounts remain properly configured in Manual Mode (0,0).<br>
-                        No new accounts became inactive in the last 24 hours.<br>
-                        <strong>System monitoring is working correctly.</strong>
-                    </div>
-                </div>
-                """]
+                else:
+                    content_parts.append(
+                        self.builder.build_success_message(
+                            "Comprehensive daily reset completed - all accounts properly configured",
+                            f"Monitored {auto_mode_accounts_monitored} Auto Mode accounts and {apcampaign_projects_monitored} APcampaign projects. "
+                            f"All inactive accounts are properly configured - no changes needed."
+                        )
+                    )
             else:
-                # Separate priority and regular accounts from recent changes only
-                priority_accounts = [acc for acc in recent_accounts if "PRIORITY" in acc.get("status", "")]
-                inactive_accounts = [acc for acc in recent_accounts if acc.get("auto_scan", 0) == 0 and "PRIORITY" not in acc.get("status", "")]
-                active_accounts = [acc for acc in recent_accounts if acc.get("auto_scan", 0) == 1]
+                error_msg = report_data.get("error_message", "Unknown error occurred")
+                content_parts.append(
+                    self.builder.build_error_message("Comprehensive daily reset failed", error_msg)
+                )
+            
+            # Add configuration explanation for both types
+            content_parts.append("""
+            <div style="background-color: #e3f2fd; border: 1px solid #2196f3; padding: 15px; margin: 20px 0; border-radius: 6px;">
+                <h4 style="margin: 0 0 10px 0; color: #1565c0;">📋 Configuration Types Explained</h4>
+                <div style="font-size: 13px; color: #1976d2; line-height: 1.5;">
+                    <strong>Manual Mode (0,0):</strong> Auto-Scan = OFF, Scans Per Day = 0 (No scanning)<br>
+                    <strong>Auto Mode (1,72):</strong> Auto-Scan = ON, Scans Per Day = 72 (Legacy high-frequency)<br>
+                    <strong>APcampaign Mode (1,12):</strong> Auto-Scan = ON, Scans Per Day = 12 (Current campaign-based)<br><br>
+                    <em>Inactive accounts should use Manual Mode (0,0) regardless of their previous configuration.</em>
+                </div>
+            </div>
+            """)
+            
+            # Process Auto Mode account changes
+            recent_auto_accounts = self._filter_recent_changes(accounts_reset)
+            
+            if recent_auto_accounts:
+                priority_accounts = [acc for acc in recent_auto_accounts if "PRIORITY" in acc.get("status", "")]
+                inactive_accounts = [acc for acc in recent_auto_accounts if acc.get("auto_scan", 0) == 0 and "PRIORITY" not in acc.get("status", "")]
                 
-                # Add priority account alerts if any
                 if priority_accounts:
                     priority_projects = sum(acc.get("total_projects", 0) for acc in priority_accounts)
-                    title = f"🚨 PRIORITY ACCOUNT ALERTS (Last 24H) - {len(priority_accounts)} Newly Inactive Accounts ({priority_projects} Projects Reset)"
+                    title = f"🚨 PRIORITY AUTO MODE ALERTS (Last 24H) - {len(priority_accounts)} Newly Inactive Accounts ({priority_projects} Projects Reset)"
                     content_parts.append(
                         self.builder.build_account_table(priority_accounts, title, is_priority=True)
                     )
                 
-                # Add inactive accounts with recent changes
                 if inactive_accounts:
                     inactive_projects = sum(acc.get("total_projects", 0) for acc in inactive_accounts)
-                    title = f"Recent Changes (Last 24H) - {len(inactive_accounts)} Accounts ({inactive_projects} Total Projects)"
+                    title = f"Auto Mode Recent Changes (Last 24H) - {len(inactive_accounts)} Accounts ({inactive_projects} Total Projects)"
                     content_parts.append(
                         self.builder.build_account_table(inactive_accounts, title)
                     )
-                
-                # Only show active accounts if there were actual changes
-                if active_accounts and (priority_accounts or inactive_accounts):
-                    active_projects = sum(acc.get("total_projects", 0) for acc in active_accounts)
-                    title = f"Active Accounts (Recent Activity) - {len(active_accounts)} Accounts ({active_projects} Total Projects)"
-                    content_parts.append(
-                        self.builder.build_account_table(active_accounts, title)
-                    )
+            
+            # Process APcampaign account changes
+            if apcampaign_accounts_reset:
+                # Create APcampaign table format
+                apcampaign_table_html = self._build_apcampaign_table(apcampaign_accounts_reset, apcampaign_reset_success, apcampaign_reset_failures)
+                content_parts.append(apcampaign_table_html)
+
+            # Process APNews account status
+            if apnews_inactive_accounts:
+                apnews_table_html = self._build_apnews_table(apnews_inactive_accounts, apnews_accounts_monitored, apnews_unknown_count)
+                content_parts.append(apnews_table_html)
+            
+            # If no changes at all, show minimal summary
+            if not recent_auto_accounts and not apcampaign_accounts_reset and not apnews_inactive_accounts:
+                content_parts = [
+                    content_parts[0],  # Keep the header
+                    """
+                <div style="background-color: #e8f5e8; border: 1px solid #4caf50; padding: 20px; margin: 20px 0; border-radius: 6px; text-align: center;">
+                    <h3 style="margin: 0 0 15px 0; color: #2e7d32;">✅ No Account Changes Detected</h3>
+                    <div style="font-size: 14px; color: #388e3c; line-height: 1.6;">
+                        Auto Mode: All {0} accounts remain properly configured.<br>
+                        APcampaign: All {1} projects remain properly configured.<br>
+                        APNews: {2} accounts monitored ({3} inactive, {4} unknown).<br>
+                        <strong>Comprehensive monitoring is working correctly.</strong>
+                    </div>
+                </div>
+                """.format(auto_mode_accounts_monitored, apcampaign_projects_monitored, apnews_accounts_monitored, apnews_inactive_count, apnews_unknown_count)
+                ]
             
             # Build final email
             main_content = "".join(content_parts)
             
             html_content = self.builder.build_geoedge_email(
-                title="GeoEdge Auto Mode Monitoring Report",
+                title="GeoEdge Comprehensive Monitoring Report",
                 greeting="Hi team,",
                 main_content=main_content
             )
             
-            # Prepare CSV data for attachment (only recent changes)
+            # Prepare CSV data for attachment (include both types of changes)
             csv_data = []
             
-            # Only include accounts with recent changes in CSV
-            for account in recent_accounts:
+            # Add Auto Mode account data
+            for account in recent_auto_accounts:
                 csv_data.append({
+                    "Monitoring Type": "Auto Mode (1,72)",
                     "Account ID": account.get("account_id"),
+                    "Account Name": account.get("account_name", "N/A"),
                     "Account Status": account.get("status"),
-                    "Total Projects": account.get("project_count", 0),
+                    "Total Projects": account.get("total_projects", 0),
                     "Auto Scan Setting": account.get("auto_scan", 0),
                     "Scans Per Day": account.get("scans_per_day", 0),
                     "Configuration": f"({account.get('auto_scan', 0)},{account.get('scans_per_day', 0)})",
-                    "Configuration Type": "Manual Mode" if (account.get('auto_scan', 0) == 0 and account.get('scans_per_day', 0) == 0) else "Auto Mode" if (account.get('auto_scan', 0) == 1 and account.get('scans_per_day', 0) == 72) else "Custom",
-                    "Projects Reset": account.get("projects_reset", account.get("total_projects", 0)),  # Use projects_reset or total_projects as fallback
+                    "Projects Reset": account.get("projects_reset", 0),
                     "Last Updated": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
-                    "Scan Status": "Disabled" if (account.get('auto_scan', 0) == 0 and account.get('scans_per_day', 0) == 0) else "Enabled"
+                    "Scan Status": "Disabled" if (account.get('auto_scan', 0) == 0) else "Enabled"
+                })
+            
+            # Add APcampaign account data  
+            for account in apcampaign_accounts_reset:
+                csv_data.append({
+                    "Monitoring Type": "APcampaign (1,12)",
+                    "Account ID": f"Campaign {account.get('campaign_id', 'N/A')}",
+                    "Account Name": "N/A",
+                    "Account Status": "INACTIVE_CAMPAIGN",
+                    "Total Projects": 1,  # Each entry is one project
+                    "Auto Scan Setting": 0,  # Now reset to 0
+                    "Scans Per Day": 0,  # Now reset to 0
+                    "Configuration": account.get('new_config', '0,0'),
+                    "Projects Reset": 1 if account.get('reset_success') else 0,
+                    "Last Updated": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
+                    "Scan Status": "Disabled" if account.get('reset_success') else "Failed"
+                })
+
+            # Add APNews inactive account data
+            for account in apnews_inactive_accounts:
+                csv_data.append({
+                    "Monitoring Type": "APNews Accounts",
+                    "Account ID": account.get("account_id"),
+                    "Account Name": account.get("account_name", "N/A"),
+                    "Account Status": account.get("status", "N/A"),
+                    "Total Projects": "N/A",
+                    "Auto Scan Setting": "N/A",
+                    "Scans Per Day": "N/A",
+                    "Configuration": "N/A",
+                    "Projects Reset": 0,
+                    "Last Updated": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
+                    "Scan Status": "N/A"
                 })
             
             # Send email
             date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
             
-            # Adjust subject line based on whether there are recent changes
-            if not recent_accounts:
-                subject = f"✅ GeoEdge Auto Mode Monitor - No Changes Detected ({date_str})"
+            # Adjust subject line based on results
+            if total_all_projects_reset == 0:
+                subject = f"✅ GeoEdge Comprehensive Monitor - No Changes Detected ({date_str})"
             elif status == "success":
-                if projects_reset > 0:
-                    priority_count = len([acc for acc in recent_accounts if "PRIORITY" in acc.get("status", "")])
-                    if priority_count > 0:
-                        subject = f"🚨 GeoEdge Auto Mode Monitor - {priority_count} Auto Mode Accounts Inactive ({projects_reset} Projects Reset) ({date_str})"
-                    else:
-                        subject = f"🔧 GeoEdge Auto Mode Monitor - {projects_reset} Projects Reset ({date_str})"
+                if auto_mode_projects_reset > 0 and apcampaign_projects_reset > 0:
+                    subject = f"🔧 GeoEdge Comprehensive Monitor - Auto:{auto_mode_projects_reset} + APcampaign:{apcampaign_projects_reset} Projects Reset ({date_str})"
+                elif auto_mode_projects_reset > 0:
+                    subject = f"🚨 GeoEdge Comprehensive Monitor - {auto_mode_projects_reset} Auto Mode Projects Reset ({date_str})"
+                elif apcampaign_projects_reset > 0:
+                    subject = f"🔧 GeoEdge Comprehensive Monitor - {apcampaign_projects_reset} APcampaign Projects Reset ({date_str})"
                 else:
-                    subject = f"✅ GeoEdge Auto Mode Monitor - All Auto Mode Accounts Active ({date_str})"
+                    subject = f"✅ GeoEdge Comprehensive Monitor - All Accounts Active ({date_str})"
             else:
-                subject = f"❌ GeoEdge Auto Mode Monitor - System Error Detected ({date_str})"
+                subject = f"❌ GeoEdge Comprehensive Monitor - System Error Detected ({date_str})"
             
-            csv_filename = f"geoedge_reset_report_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M')}.csv"
+            csv_filename = f"geoedge_comprehensive_report_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M')}.csv"
             
             return self.sender.send_email(
                 subject=subject,
@@ -501,7 +561,81 @@ class GeoEdgeEmailReporter:
             
         except Exception as e:
             print(f"❌ Failed to send reset report email: {str(e)}")
-            return False    
+            return False
+    
+    def _build_apcampaign_table(self, apcampaign_accounts: List[Dict], success_count: int, failure_count: int) -> str:
+        """Build HTML table for APcampaign account changes"""
+        
+        title = f"🔧 APcampaign Changes (1,12 → 0,0) - {len(apcampaign_accounts)} Projects ({success_count} Success, {failure_count} Failed)"
+        
+        # Build table rows
+        rows = ""
+        for account in apcampaign_accounts:
+            status_icon = "✅" if account.get('reset_success') else "❌"
+            status_color = "#28a745" if account.get('reset_success') else "#dc3545"
+            
+            rows += f"""
+            <tr style="border-bottom: 1px solid #ddd;">
+                <td style="padding: 8px; font-size: 11px; font-family: monospace;">{account.get('project_id', 'N/A')[:20]}...</td>
+                <td style="padding: 8px; text-align: center;">{account.get('campaign_id', 'N/A')}</td>
+                <td style="padding: 8px; font-size: 11px;">{account.get('locations', 'N/A')[:15]}...</td>
+                <td style="padding: 8px; text-align: center;">{account.get('old_config', 'N/A')}</td>
+                <td style="padding: 8px; text-align: center; color: {status_color}; font-weight: bold;">{status_icon} {account.get('new_config', 'N/A')}</td>
+            </tr>
+            """
+        
+        return f"""
+        <div style="margin: 20px 0;">
+            <h4 style="margin: 0 0 15px 0; color: #1976d2; font-size: 16px;">{title}</h4>
+            <table style="width: 100%; border-collapse: collapse; border: 1px solid #ddd; background-color: white;">
+                <thead>
+                    <tr style="background-color: #f8f9fa;">
+                        <th style="padding: 10px 8px; text-align: left; font-size: 12px; font-weight: 600; color: #495057; border-bottom: 2px solid #dee2e6;">Project ID</th>
+                        <th style="padding: 10px 8px; text-align: center; font-size: 12px; font-weight: 600; color: #495057; border-bottom: 2px solid #dee2e6;">Campaign</th>
+                        <th style="padding: 10px 8px; text-align: left; font-size: 12px; font-weight: 600; color: #495057; border-bottom: 2px solid #dee2e6;">Locations</th>
+                        <th style="padding: 10px 8px; text-align: center; font-size: 12px; font-weight: 600; color: #495057; border-bottom: 2px solid #dee2e6;">Old Config</th>
+                        <th style="padding: 10px 8px; text-align: center; font-size: 12px; font-weight: 600; color: #495057; border-bottom: 2px solid #dee2e6;">New Config</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {rows}
+                </tbody>
+            </table>
+        </div>
+        """
+    def _build_apnews_table(self, apnews_accounts: List[Dict], total_monitored: int, unknown_count: int) -> str:
+        """Build HTML table for APNews inactive accounts"""
+
+        title = f"📰 APNews Inactive Accounts - {len(apnews_accounts)} Inactive (Total: {total_monitored}, Unknown: {unknown_count})"
+
+        rows = ""
+        for account in apnews_accounts:
+            rows += f"""
+            <tr style="border-bottom: 1px solid #ddd;">
+                <td style="padding: 8px; font-size: 11px; font-family: monospace;">{account.get('account_id', 'N/A')}</td>
+                <td style="padding: 8px; font-size: 11px;">{account.get('account_name', 'N/A')}</td>
+                <td style="padding: 8px; text-align: center;">{account.get('status', 'N/A')}</td>
+            </tr>
+            """
+
+        return f"""
+        <div style="margin: 20px 0;">
+            <h4 style="margin: 0 0 15px 0; color: #1976d2; font-size: 16px;">{title}</h4>
+            <table style="width: 100%; border-collapse: collapse; border: 1px solid #ddd; background-color: white;">
+                <thead>
+                    <tr style="background-color: #f8f9fa;">
+                        <th style="padding: 10px 8px; text-align: left; font-size: 12px; font-weight: 600; color: #495057; border-bottom: 2px solid #dee2e6;">Account ID</th>
+                        <th style="padding: 10px 8px; text-align: left; font-size: 12px; font-weight: 600; color: #495057; border-bottom: 2px solid #dee2e6;">Account Name</th>
+                        <th style="padding: 10px 8px; text-align: center; font-size: 12px; font-weight: 600; color: #495057; border-bottom: 2px solid #dee2e6;">Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {rows}
+                </tbody>
+            </table>
+        </div>
+        """
+        
     def _filter_recent_changes(self, accounts_reset: List[Dict]) -> List[Dict]:
         """Filter accounts to only include those with changes in the last 24 hours"""
         from datetime import datetime, timedelta
