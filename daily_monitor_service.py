@@ -13,7 +13,7 @@ from datetime import datetime, timedelta
 from dotenv import load_dotenv
 import signal
 import logging
-from account_status_monitor import AccountStatusMonitor
+from account_status_monitor_fixed import AccountStatusMonitor
 from email_reporter import GeoEdgeEmailReporter
 
 load_dotenv()
@@ -50,58 +50,74 @@ class GeoEdgeDailyService:
             return False
     
     def run_daily_check(self):
-        """Execute the daily monitoring and reporting"""
+        """Execute the comprehensive daily monitoring (Auto Mode + APcampaign) and reporting"""
         try:
-            logger.info("🔍 Starting daily Auto Mode account check...")
+            logger.info("🔍 Starting comprehensive daily monitoring (Auto Mode + APcampaign)...")
             
-            # Check for Auto Mode accounts that became inactive and reset them
+            # Run comprehensive monitoring that includes both Auto Mode and APcampaign
             results = self.monitor.monitor_status_changes()
             
-            # Get accounts that were actually reset
+            # Extract Auto Mode results
             accounts_reset = results.get('accounts_reset', [])
             total_projects_reset = results.get('total_projects_reset', 0)
             auto_mode_accounts_monitored = results.get('auto_mode_accounts_monitored', 0)
             
+            # Extract APcampaign results
+            apcampaign_accounts_reset = results.get('apcampaign_accounts_reset', [])
+            apcampaign_projects_reset = results.get('apcampaign_projects_reset', 0)
+            apcampaign_projects_monitored = results.get('apcampaign_projects_monitored', 0)
+            
+            # Combined totals
+            total_all_projects_reset = results.get('total_all_projects_reset', total_projects_reset + apcampaign_projects_reset)
+            
+            # Extract Non-Matching reset results (Phase 4)
+            non_matching_checked = results.get('non_matching_checked', 0)
+            non_matching_reset = results.get('non_matching_reset', 0)
+            
+            # Log Auto Mode results
             if accounts_reset:
-                logger.info(f"🚨 Found {len(accounts_reset)} Auto Mode accounts that became inactive")
-                logger.info(f"🔧 Reset {total_projects_reset} projects from Auto (1,72) to Manual (0,0)")
+                logger.info(f"🚨 Auto Mode: Found {len(accounts_reset)} accounts that became inactive")
+                logger.info(f"🔧 Auto Mode: Reset {total_projects_reset} projects from (1,72) to (0,0)")
                 
-                # Log the specific accounts reset
                 for account in accounts_reset:
-                    logger.info(f"   Reset Account {account['account_id']}: {account['projects_reset']} projects")
+                    logger.info(f"   Auto Mode Reset Account {account['account_id']}: {account['projects_reset']} projects")
             else:
-                logger.info("✅ No Auto Mode accounts became inactive")
+                logger.info("✅ Auto Mode: No accounts became inactive")
             
-            # Always send daily report
-            logger.info("📧 Sending daily Auto Mode monitoring report...")
+            # Log APcampaign results  
+            if apcampaign_accounts_reset:
+                logger.info(f"🚨 APcampaign: Found {len(apcampaign_accounts_reset)} projects with inactive accounts")
+                logger.info(f"🔧 APcampaign: Reset {apcampaign_projects_reset} projects from (1,12) to (0,0)")
+            else:
+                logger.info("✅ APcampaign: All accounts remain active")
             
-            report_data = {
-                'status': 'success',
-                'accounts_reset': accounts_reset,
-                'total_projects_reset': total_projects_reset,
-                'projects_reset': total_projects_reset,  # Actual projects reset
-                'execution_time': 2.5,
-                'total_accounts_monitored': auto_mode_accounts_monitored,  # Only Auto Mode accounts
-                'inactive_accounts': len(accounts_reset),
-                'active_accounts': auto_mode_accounts_monitored - len(accounts_reset),
-                'projects_scanned': sum(acc.get('projects_reset', 0) for acc in accounts_reset),
-                'timestamp': datetime.now().isoformat()
-            }
+            # Log Non-Matching results (Phase 4)
+            if non_matching_reset > 0:
+                logger.info(f"🔧 Non-Matching: Reset {non_matching_reset} projects (auto mode with inactive campaigns/accounts)")
+            else:
+                logger.info(f"✅ Non-Matching: Checked {non_matching_checked} projects - all properly configured")
             
-            email_sent = self.reporter.send_daily_reset_report(report_data)
+            # Combined summary
+            logger.info(f"📊 TOTAL: {total_all_projects_reset} projects reset across all monitoring types")
+            
+            # Always send comprehensive daily report
+            logger.info("📧 Sending comprehensive daily monitoring report...")
+            
+            # Pass all results to email reporter (it's already updated to handle comprehensive data)
+            email_sent = self.reporter.send_daily_reset_report(results)
             
             if email_sent:
-                if accounts_reset:
-                    logger.info(f"✅ Daily report sent: {len(accounts_reset)} priority accounts, {total_projects_reset} projects reset")
+                if total_all_projects_reset > 0:
+                    logger.info(f"✅ Comprehensive report sent: Auto:{total_projects_reset} + APcampaign:{apcampaign_projects_reset} + NonMatching:{non_matching_reset} = {total_all_projects_reset} projects reset")
                 else:
-                    logger.info("✅ Daily report sent: No changes detected")
+                    logger.info("✅ Comprehensive report sent: No changes detected")
             else:
-                logger.error("❌ Failed to send daily report")
+                logger.error("❌ Failed to send comprehensive report")
             
             return True
             
         except Exception as e:
-            logger.error(f"❌ Error during daily check: {e}")
+            logger.error(f"❌ Error during comprehensive daily check: {e}")
             
             # Try to send error report
             try:
@@ -110,6 +126,9 @@ class GeoEdgeDailyService:
                     'error_message': str(e),
                     'accounts_reset': [],
                     'total_projects_reset': 0,
+                    'apcampaign_accounts_reset': [],
+                    'apcampaign_projects_reset': 0,
+                    'total_all_projects_reset': 0,
                     'execution_time': 0,
                     'timestamp': datetime.now().isoformat()
                 }

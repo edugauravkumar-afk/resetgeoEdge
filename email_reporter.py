@@ -344,10 +344,17 @@ class GeoEdgeEmailReporter:
             apnews_newly_inactive_accounts = report_data.get("apnews_newly_inactive_accounts", [])
             apnews_unknown_count = report_data.get("apnews_unknown_count", 0)
             
+            # Non-matching projects reset data (Phase 4)
+            non_matching_checked = report_data.get("non_matching_checked", 0)
+            non_matching_reset = report_data.get("non_matching_reset", 0)
+            non_matching_already_manual = report_data.get("non_matching_already_manual", 0)
+            non_matching_errors = report_data.get("non_matching_errors", 0)
+            non_matching_reset_details = report_data.get("non_matching_reset_details", [])
+            
             # Combined totals
             total_accounts_monitored = report_data.get("total_accounts_monitored", auto_mode_accounts_monitored + apcampaign_projects_monitored)
             total_inactive_found = report_data.get("total_inactive_found", auto_mode_inactive + apcampaign_inactive)
-            total_all_projects_reset = report_data.get("total_all_projects_reset", auto_mode_projects_reset + apcampaign_projects_reset)
+            total_all_projects_reset = report_data.get("total_all_projects_reset", auto_mode_projects_reset + apcampaign_projects_reset + non_matching_reset)
             
             # Build enhanced summary statistics
             recent_auto_accounts = self._filter_recent_changes(accounts_reset)
@@ -361,6 +368,8 @@ class GeoEdgeEmailReporter:
                 "APNews Became Inactive (24h)": apnews_newly_inactive_count,
                 "Auto Mode Projects Reset": auto_mode_projects_reset,
                 "APcampaign Projects Reset": apcampaign_projects_reset,
+                "Non-Matching Projects Checked": f"{non_matching_checked:,}",
+                "Non-Matching Projects Reset": non_matching_reset,
                 "APNews Unknown": apnews_unknown_count,
                 "Total Changes Made": "Yes" if total_all_projects_reset > 0 else "No",
                 "Execution Time": f"{report_data.get('execution_time', 5.0):.1f}s"
@@ -377,6 +386,7 @@ class GeoEdgeEmailReporter:
                     This report covers <strong>multi-source monitoring</strong>:<br>
                     • <strong>Auto Mode accounts (1,72 → 0,0)</strong>: Legacy high-frequency scanning accounts<br>
                     • <strong>APcampaign accounts (1,12 → 0,0)</strong>: Current campaign-based scanning accounts<br>
+                    • <strong>Non-Matching Projects Reset</strong>: Auto mode projects with inactive campaigns/accounts reset to manual<br>
                     • <strong>APNews accounts</strong>: Daily status visibility from APNews.csv
                 </div>
             </div>
@@ -394,6 +404,7 @@ class GeoEdgeEmailReporter:
                             "Comprehensive daily reset completed with configuration updates",
                             f"Auto Mode: Reset {auto_mode_projects_reset} projects from (1,72) to (0,0). "
                             f"APcampaign: Reset {apcampaign_projects_reset} projects from (1,12) to (0,0). "
+                            f"Non-Matching: Reset {non_matching_reset} projects with inactive campaigns/accounts. "
                             f"Total: {total_all_projects_reset} projects disabled for inactive accounts."
                         )
                     )
@@ -402,6 +413,7 @@ class GeoEdgeEmailReporter:
                         self.builder.build_success_message(
                             "Comprehensive daily reset completed - all accounts properly configured",
                             f"Monitored {auto_mode_accounts_monitored} Auto Mode accounts and {apcampaign_projects_monitored} APcampaign projects. "
+                            f"Checked {non_matching_checked} non-matching projects. "
                             f"All inactive accounts are properly configured - no changes needed."
                         )
                     )
@@ -540,12 +552,16 @@ class GeoEdgeEmailReporter:
             if total_all_projects_reset == 0:
                 subject = f"✅ GeoEdge Comprehensive Monitor - No Changes Detected ({date_str})"
             elif status == "success":
-                if auto_mode_projects_reset > 0 and apcampaign_projects_reset > 0:
-                    subject = f"🔧 GeoEdge Comprehensive Monitor - Auto:{auto_mode_projects_reset} + APcampaign:{apcampaign_projects_reset} Projects Reset ({date_str})"
-                elif auto_mode_projects_reset > 0:
-                    subject = f"🚨 GeoEdge Comprehensive Monitor - {auto_mode_projects_reset} Auto Mode Projects Reset ({date_str})"
-                elif apcampaign_projects_reset > 0:
-                    subject = f"🔧 GeoEdge Comprehensive Monitor - {apcampaign_projects_reset} APcampaign Projects Reset ({date_str})"
+                reset_parts = []
+                if auto_mode_projects_reset > 0:
+                    reset_parts.append(f"Auto:{auto_mode_projects_reset}")
+                if apcampaign_projects_reset > 0:
+                    reset_parts.append(f"APcampaign:{apcampaign_projects_reset}")
+                if non_matching_reset > 0:
+                    reset_parts.append(f"NonMatching:{non_matching_reset}")
+                
+                if reset_parts:
+                    subject = f"🔧 GeoEdge Monitor - {' + '.join(reset_parts)} = {total_all_projects_reset} Projects Reset ({date_str})"
                 else:
                     subject = f"✅ GeoEdge Comprehensive Monitor - All Accounts Active ({date_str})"
             else:

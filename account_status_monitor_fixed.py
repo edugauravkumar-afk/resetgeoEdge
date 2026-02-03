@@ -16,6 +16,7 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Tuple, Any
 from dotenv import load_dotenv
 from apcampaign_addon import run_apcampaign_monitoring
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # Load environment variables
 load_dotenv()
@@ -44,32 +45,45 @@ class AccountStatusMonitor:
         return pymysql.connect(**self.db_config)
     
     def get_active_auto_scan_accounts(self) -> List[Dict]:
-        """Get all accounts that currently have Auto Mode (1,72) configuration"""
+        """Get all projects with active accounts and running campaigns, then filter by GeoEdge API config"""
         db = self._get_db_connection()
         cursor = db.cursor(pymysql.cursors.DictCursor)
         
+
         try:
+            # Get all projects with active accounts and running campaigns
             cursor.execute("""
-                SELECT DISTINCT 
-                    p.syndicator_id as id,
-                    p.name,
-                    p.status,
-                    COUNT(DISTINCT gep.project_id) as project_count
-                FROM publishers p
-                INNER JOIN geo_edge_projects gep ON p.syndicator_id = gep.syndicator_id
-                WHERE gep.auto_scan = 1 
-                AND gep.times_per_day = 72
-                AND p.status = 'active'
-                GROUP BY p.syndicator_id, p.name, p.status
-                ORDER BY project_count DESC
+                SELECT DISTINCT
+                    gep.project_id,
+                    gep.campaign_id,
+                    c.syndicator_id as account_id,
+                    p.name as account_name,
+                    p.status as account_status,
+                    LC.display_status
+                FROM geo_edge_projects gep
+                JOIN sp_campaigns c ON gep.campaign_id = c.id
+                JOIN publishers p ON c.syndicator_id = p.id
+                JOIN sp_campaigns_latest_snapshot LC ON gep.campaign_id = LC.id
+                WHERE p.status = 'active'
+                  AND LC.display_status = 'RUNNING'
+                ORDER BY c.syndicator_id, gep.campaign_id
             """)
+            all_projects = cursor.fetchall()
+            logger.info(f"Found {len(all_projects)} projects with RUNNING campaigns for ACTIVE accounts")
             
-            results = cursor.fetchall()
-            logger.info(f"Found {len(results)} active accounts with Auto Mode (1,72) configuration")
-            return results
+            # Filter by GeoEdge API config - only keep auto mode (1,72 or 1,12)
+            auto_mode_projects = []
+            for project in all_projects:
+                config = self.get_project_config(project['project_id'])
+                if config['success'] and config['auto_scan'] == 1 and config['times_per_day'] in [72, 12]:
+                    project['auto_scan'] = config['auto_scan']
+                    project['times_per_day'] = config['times_per_day']
+                    auto_mode_projects.append(project)
             
+            logger.info(f"Found {len(auto_mode_projects)} projects with Auto Mode (1,72 or 1,12) config from GeoEdge API")
+            return auto_mode_projects
         except Exception as e:
-            logger.error(f"Error getting active Auto Mode accounts: {e}")
+            logger.error(f"Error getting filtered Auto Mode projects: {e}")
             return []
         finally:
             cursor.close()
@@ -83,18 +97,17 @@ class AccountStatusMonitor:
         try:
             cursor.execute("""
                 SELECT DISTINCT
-                    p.syndicator_id as id,
+                    p.id as id,
                     p.name,
                     p.status,
                     p.update_time,
                     COUNT(DISTINCT gep.project_id) as project_count
                 FROM publishers p
-                INNER JOIN geo_edge_projects gep ON p.syndicator_id = gep.syndicator_id
+                INNER JOIN sp_campaigns c ON c.syndicator_id = p.id
+                INNER JOIN geo_edge_projects gep ON gep.campaign_id = c.id
                 WHERE p.status IN ('inactive', 'paused', 'suspended', 'frozen')
                 AND p.update_time >= DATE_SUB(NOW(), INTERVAL 24 HOUR)
-                AND gep.auto_scan = 1
-                AND gep.times_per_day = 72
-                GROUP BY p.syndicator_id, p.name, p.status, p.update_time
+                GROUP BY p.id, p.name, p.status, p.update_time
                 HAVING project_count > 0
                 ORDER BY p.update_time DESC
             """)
@@ -111,32 +124,318 @@ class AccountStatusMonitor:
             db.close()
     
     def reset_projects_to_manual_mode(self, account_id: int) -> int:
-        """Reset all Auto Mode projects for an account to Manual Mode (0,0)"""
+        """Reset all Auto Mode projects for an account to Manual Mode (0,0) via GeoEdge API"""
         db = self._get_db_connection()
         cursor = db.cursor()
         
         try:
-            # Update geo_edge_projects from (1,72) to (0,0)
+            # Get all project IDs for this account
             cursor.execute("""
-                UPDATE geo_edge_projects 
-                SET auto_scan = 0, times_per_day = 0
-                WHERE syndicator_id = %s 
-                AND auto_scan = 1 
-                AND times_per_day = 72
+                SELECT DISTINCT gep.project_id
+                FROM geo_edge_projects gep
+                JOIN sp_campaigns c ON gep.campaign_id = c.id
+                WHERE c.syndicator_id = %s
             """, (account_id,))
             
-            projects_reset = cursor.rowcount
-            db.commit()
+            project_ids = [row[0] for row in cursor.fetchall()]
+            projects_reset = 0
+            
+            # Check and reset each project via GeoEdge API
+            for project_id in project_ids:
+                # First check current config from GeoEdge API
+                current_config = self.get_project_config(project_id)
+                
+                if current_config['success']:
+                    auto_scan = current_config['auto_scan']
+                    times_per_day = current_config['times_per_day']
+                    
+                    # Only reset if currently in auto mode (1,72 or 1,12)
+                    if auto_scan == 1 and times_per_day in [72, 12]:
+                        if self.reset_apcampaign_project_to_inactive(project_id):
+                            projects_reset += 1
+                            logger.info(f"✅ Reset project {project_id[:16]}... from {auto_scan},{times_per_day} to 0,0")
             
             if projects_reset > 0:
-                logger.info(f"✅ Reset {projects_reset} projects for account {account_id} from (1,72) to (0,0)")
+                logger.info(f"✅ Reset {projects_reset} projects for account {account_id} to manual (0,0)")
             
             return projects_reset
             
         except Exception as e:
-            db.rollback()
             logger.error(f"❌ Failed to reset projects for account {account_id}: {e}")
             return 0
+        finally:
+            cursor.close()
+            db.close()
+
+    def reset_non_matching_projects_to_manual(self):
+        """Reset projects for configured accounts and campaigns that do NOT have display_status RUNNING or account status active
+        Sources:
+        - all_affected_accounts_unified.txt: Accounts configured to 1,72 (AP News, 419, 197)
+        - LP_Alerts_24H/APcampaign.csv: Campaigns configured to 1,12"""
+        logger.info("🔍 Checking configured accounts & campaigns for non-matching projects...")
+        
+        # Read configured accounts from all_affected_accounts_unified.txt (1,72 config)
+        configured_account_ids = []
+        try:
+            with open('all_affected_accounts_unified.txt', 'r') as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith('#'):
+                        try:
+                            configured_account_ids.append(int(line))
+                        except ValueError:
+                            continue
+            logger.info(f"📋 Found {len(configured_account_ids)} accounts in all_affected_accounts_unified.txt (1,72 config)")
+        except Exception as e:
+            logger.warning(f"⚠️ Could not read all_affected_accounts_unified.txt: {e}")
+        
+        # Read configured campaigns from APcampaign.csv (1,12 config)
+        configured_campaign_ids = []
+        try:
+            df = pd.read_csv('LP_Alerts_24H/APcampaign.csv')
+            configured_campaign_ids = df['Campaign ID'].tolist()
+            logger.info(f"📋 Found {len(configured_campaign_ids)} campaigns in APcampaign.csv (1,12 config)")
+        except Exception as e:
+            logger.warning(f"⚠️ Could not read APcampaign.csv: {e}")
+        
+        if not configured_account_ids and not configured_campaign_ids:
+            logger.info("No configured accounts or campaigns found")
+            return
+        
+        db = self._get_db_connection()
+        cursor = db.cursor(pymysql.cursors.DictCursor)
+        
+        try:
+            # Build query to check projects for BOTH:
+            # 1. Accounts from all_affected_accounts_unified.txt
+            # 2. Campaigns from APcampaign.csv
+            conditions = []
+            
+            if configured_account_ids:
+                account_ids_str = ','.join(map(str, configured_account_ids))
+                conditions.append(f"c.syndicator_id IN ({account_ids_str})")
+            
+            if configured_campaign_ids:
+                campaign_ids_str = ','.join(map(str, configured_campaign_ids))
+                conditions.append(f"gep.campaign_id IN ({campaign_ids_str})")
+            
+            where_clause = f"({' OR '.join(conditions)}) AND (p.status != 'active' OR LC.display_status != 'RUNNING')"
+            
+            cursor.execute(f"""
+                SELECT DISTINCT
+                    gep.project_id,
+                    gep.campaign_id,
+                    c.syndicator_id as account_id,
+                    p.name as account_name,
+                    p.status as account_status,
+                    LC.display_status
+                FROM geo_edge_projects gep
+                JOIN sp_campaigns c ON gep.campaign_id = c.id
+                JOIN publishers p ON c.syndicator_id = p.id
+                JOIN sp_campaigns_latest_snapshot LC ON LC.id = c.id
+                WHERE {where_clause}
+            """)
+            
+            non_matching_projects = cursor.fetchall()
+            logger.info(f"Found {len(non_matching_projects)} non-matching projects from configured accounts/campaigns")
+            
+            checked_count = 0
+            reset_count = 0
+            already_manual_count = 0
+            
+            def process_project(project):
+                project_id = project['project_id']
+                # Check current config from GeoEdge API
+                current_config = self.get_project_config(project_id)
+                
+                if not current_config['success']:
+                    return 'error', project_id
+                
+                auto_scan = current_config['auto_scan']
+                times_per_day = current_config['times_per_day']
+                
+                # Only reset if currently in auto mode (1,72 or 1,12)
+                if auto_scan == 1 and times_per_day in [72, 12]:
+                    reason = f"account_status={project['account_status']}, display_status={project['display_status']}"
+                    logger.info(f"🔧 Project {project_id[:16]}... is {auto_scan},{times_per_day} but should be manual ({reason})")
+                    
+                    if self.reset_apcampaign_project_to_inactive(project_id):
+                        logger.info(f"✅ Reset project {project_id[:16]}... from {auto_scan},{times_per_day} to 0,0")
+                        return 'reset', project_id
+                    else:
+                        logger.error(f"❌ Failed to reset project {project_id[:16]}...")
+                        return 'failed', project_id
+                else:
+                    return 'already_manual', project_id
+            
+            # Use multithreading for faster processing
+            with ThreadPoolExecutor(max_workers=8) as executor:
+                future_to_project = {executor.submit(process_project, p): p for p in non_matching_projects}
+                for i, future in enumerate(as_completed(future_to_project), 1):
+                    result, project_id = future.result()
+                    checked_count += 1
+                    if result == 'reset':
+                        reset_count += 1
+                    elif result == 'already_manual':
+                        already_manual_count += 1
+                    
+                    if i % 100 == 0:
+                        logger.info(f"   Progress: {i}/{len(non_matching_projects)} projects checked...")
+            
+            logger.info(f"📊 Configured campaigns - non-matching projects summary:")
+            logger.info(f"   • Total checked: {checked_count}")
+            logger.info(f"   • Reset to manual: {reset_count}")
+            logger.info(f"   • Already manual: {already_manual_count}")
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to reset non-matching projects: {e}")
+        finally:
+            cursor.close()
+            db.close()
+
+    def reset_non_matching_projects_to_manual_with_stats(self) -> Dict[str, int]:
+        """Reset projects for configured accounts and campaigns that do NOT have display_status RUNNING or account status active
+        Sources:
+        - all_affected_accounts_unified.txt: Accounts configured to 1,72 (AP News, 419, 197)
+        - LP_Alerts_24H/APcampaign.csv: Campaigns configured to 1,12
+        Returns stats dictionary for reporting"""
+        logger.info("🔍 Checking configured accounts & campaigns for non-matching projects...")
+        
+        stats = {'checked': 0, 'reset': 0, 'already_manual': 0, 'errors': 0, 'kept_running': 0}
+        reset_details = []
+        
+        # Read configured accounts from all_affected_accounts_unified.txt (1,72 config)
+        configured_account_ids = []
+        try:
+            with open('all_affected_accounts_unified.txt', 'r') as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith('#'):
+                        try:
+                            configured_account_ids.append(int(line))
+                        except ValueError:
+                            continue
+            logger.info(f"📋 Found {len(configured_account_ids)} accounts in all_affected_accounts_unified.txt (1,72 config)")
+        except Exception as e:
+            logger.warning(f"⚠️ Could not read all_affected_accounts_unified.txt: {e}")
+        
+        # Read configured campaigns from APcampaign.csv (1,12 config)
+        configured_campaign_ids = []
+        try:
+            df = pd.read_csv('LP_Alerts_24H/APcampaign.csv')
+            configured_campaign_ids = df['Campaign ID'].tolist()
+            logger.info(f"📋 Found {len(configured_campaign_ids)} campaigns in APcampaign.csv (1,12 config)")
+        except Exception as e:
+            logger.warning(f"⚠️ Could not read APcampaign.csv: {e}")
+        
+        if not configured_account_ids and not configured_campaign_ids:
+            logger.info("No configured accounts or campaigns found")
+            return stats
+        
+        db = self._get_db_connection()
+        cursor = db.cursor(pymysql.cursors.DictCursor)
+        
+        try:
+            # Build query to check projects for BOTH:
+            # 1. Accounts from all_affected_accounts_unified.txt
+            # 2. Campaigns from APcampaign.csv
+            conditions = []
+            
+            if configured_account_ids:
+                account_ids_str = ','.join(map(str, configured_account_ids))
+                conditions.append(f"c.syndicator_id IN ({account_ids_str})")
+            
+            if configured_campaign_ids:
+                campaign_ids_str = ','.join(map(str, configured_campaign_ids))
+                conditions.append(f"gep.campaign_id IN ({campaign_ids_str})")
+            
+            where_clause = f"({' OR '.join(conditions)}) AND (p.status != 'active' OR LC.display_status != 'RUNNING')"
+            
+            cursor.execute(f"""
+                SELECT DISTINCT
+                    gep.project_id,
+                    gep.campaign_id,
+                    c.syndicator_id as account_id,
+                    p.name as account_name,
+                    p.status as account_status,
+                    LC.display_status
+                FROM geo_edge_projects gep
+                JOIN sp_campaigns c ON gep.campaign_id = c.id
+                JOIN publishers p ON c.syndicator_id = p.id
+                JOIN sp_campaigns_latest_snapshot LC ON LC.id = c.id
+                WHERE {where_clause}
+            """)
+            
+            non_matching_projects = cursor.fetchall()
+            total_projects = len(non_matching_projects)
+            logger.info(f"Found {total_projects} non-matching projects to check")
+            
+            if total_projects == 0:
+                return stats
+            
+            def process_project(project):
+                project_id = project['project_id']
+                account_id = project['account_id']
+                account_status = project['account_status']
+                display_status = project['display_status']
+                
+                # Check current config from GeoEdge API
+                current_config = self.get_project_config(project_id)
+                
+                if not current_config['success']:
+                    return 'error', project_id, None
+                
+                auto_scan = current_config['auto_scan']
+                times_per_day = current_config['times_per_day']
+                
+                # Only reset if currently in auto mode (1,72 or 1,12)
+                if auto_scan == 1 and times_per_day in [72, 12]:
+                    reason = f"account_status={account_status}, display_status={display_status}"
+                    
+                    if self.reset_apcampaign_project_to_inactive(project_id):
+                        detail = {
+                            'project_id': project_id,
+                            'account_id': account_id,
+                            'old_config': f"{auto_scan},{times_per_day}",
+                            'reason': reason
+                        }
+                        return 'reset', project_id, detail
+                    else:
+                        return 'failed', project_id, None
+                else:
+                    return 'already_manual', project_id, None
+            
+            # Use multithreading for faster processing
+            with ThreadPoolExecutor(max_workers=10) as executor:
+                future_to_project = {executor.submit(process_project, p): p for p in non_matching_projects}
+                for i, future in enumerate(as_completed(future_to_project), 1):
+                    result, project_id, detail = future.result()
+                    stats['checked'] += 1
+                    
+                    if result == 'reset':
+                        stats['reset'] += 1
+                        if detail:
+                            reset_details.append(detail)
+                    elif result == 'already_manual':
+                        stats['already_manual'] += 1
+                    elif result == 'error' or result == 'failed':
+                        stats['errors'] += 1
+                    
+                    if i % 500 == 0:
+                        logger.info(f"   Progress: {i}/{total_projects} ({i*100//total_projects}%) - Reset: {stats['reset']}, Manual: {stats['already_manual']}")
+            
+            logger.info(f"📊 Non-matching projects summary:")
+            logger.info(f"   • Total checked: {stats['checked']}")
+            logger.info(f"   • Reset to manual: {stats['reset']}")
+            logger.info(f"   • Already manual: {stats['already_manual']}")
+            logger.info(f"   • Errors: {stats['errors']}")
+            
+            stats['reset_details'] = reset_details
+            return stats
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to reset non-matching projects: {e}")
+            return stats
         finally:
             cursor.close()
             db.close()
@@ -239,17 +538,18 @@ class AccountStatusMonitor:
                 
                 cursor.execute(f"""
                     SELECT DISTINCT
-                        p.project_id,
-                        p.campaign_id,
-                        p.locations,
-                        p.syndicator_id AS account_id,
+                        gep.project_id,
+                        gep.campaign_id,
+                        gep.locations,
+                        c.syndicator_id AS account_id,
                         pub.status AS account_status,
-                        sii.instruction_status
-                    FROM trc.geo_edge_projects AS p
-                    JOIN trc.sp_campaign_inventory_instructions sii ON p.campaign_id = sii.campaign_id
-                    JOIN trc.publishers pub ON p.syndicator_id = pub.syndicator_id
-                    WHERE p.campaign_id IN ({campaign_ids_str})
-                    ORDER BY p.campaign_id
+                        LC.display_status as campaign_status
+                    FROM trc.geo_edge_projects AS gep
+                    JOIN trc.sp_campaigns c ON gep.campaign_id = c.id
+                    JOIN trc.publishers pub ON c.syndicator_id = pub.id
+                    JOIN trc.sp_campaigns_latest_snapshot LC ON LC.id = c.id
+                    WHERE gep.campaign_id IN ({campaign_ids_str})
+                    ORDER BY gep.campaign_id
                 """)
                 
                 results = cursor.fetchall()
@@ -462,14 +762,12 @@ class AccountStatusMonitor:
         # Find accounts that became inactive in last 24 hours
         newly_inactive = self.find_newly_inactive_auto_scan_accounts()
         
-        # Reset projects for newly inactive accounts
+        # Multithreaded reset for newly inactive accounts
         accounts_reset = []
         total_projects_reset = 0
-        
-        for account in newly_inactive:
+        def reset_account(account):
             account_id = account['id']
             projects_reset = self.reset_projects_to_manual_mode(account_id)
-            
             if projects_reset > 0:
                 account_reset_data = {
                     'account_id': str(account_id),
@@ -481,8 +779,16 @@ class AccountStatusMonitor:
                     'projects_reset': projects_reset,
                     'timestamp': datetime.now().isoformat()
                 }
-                accounts_reset.append(account_reset_data)
-                total_projects_reset += projects_reset
+                return account_reset_data, projects_reset
+            return None, 0
+
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            future_to_account = {executor.submit(reset_account, account): account for account in newly_inactive}
+            for future in as_completed(future_to_account):
+                account_reset_data, projects_reset = future.result()
+                if account_reset_data:
+                    accounts_reset.append(account_reset_data)
+                    total_projects_reset += projects_reset
         
         logger.info(f"📊 Auto Mode (1,72) Monitoring Results:")
         logger.info(f"   • Auto Mode accounts monitored: {auto_mode_count}")
@@ -527,6 +833,14 @@ class AccountStatusMonitor:
         logger.info(f"APNews became inactive (last 24h): {apnews_results.get('apnews_newly_inactive_count', 0)}")
         logger.info(f"APNews unknown accounts: {apnews_results.get('apnews_unknown_count', 0)}")
         
+        # 4. Reset all non-matching projects (auto mode but campaign not RUNNING or account not LIVE)
+        logger.info("\n🎯 PHASE 4: Reset Non-Matching Projects")
+        logger.info("-" * 40)
+        non_matching_reset_results = self.reset_non_matching_projects_to_manual_with_stats()
+        logger.info(f"Non-matching projects checked: {non_matching_reset_results.get('checked', 0)}")
+        logger.info(f"Non-matching projects reset: {non_matching_reset_results.get('reset', 0)}")
+        logger.info(f"Non-matching already manual: {non_matching_reset_results.get('already_manual', 0)}")
+        
         # Combine results
         combined_results = {
             # Auto Mode (1,72) results
@@ -551,10 +865,17 @@ class AccountStatusMonitor:
             'apnews_inactive_accounts': apnews_results.get('apnews_inactive_accounts', []),
             'apnews_unknown_count': apnews_results.get('apnews_unknown_count', 0),
             
+            # Non-matching projects reset results (Phase 4)
+            'non_matching_checked': non_matching_reset_results.get('checked', 0),
+            'non_matching_reset': non_matching_reset_results.get('reset', 0),
+            'non_matching_already_manual': non_matching_reset_results.get('already_manual', 0),
+            'non_matching_errors': non_matching_reset_results.get('errors', 0),
+            'non_matching_reset_details': non_matching_reset_results.get('reset_details', []),
+            
             # Combined totals
             'total_accounts_monitored': auto_mode_count + apcampaign_results.get('apcampaign_projects_monitored', 0),
             'total_inactive_found': len(newly_inactive) + apcampaign_results.get('apcampaign_newly_inactive_count', 0),
-            'total_all_projects_reset': total_projects_reset + apcampaign_results.get('apcampaign_projects_reset', 0),
+            'total_all_projects_reset': total_projects_reset + apcampaign_results.get('apcampaign_projects_reset', 0) + non_matching_reset_results.get('reset', 0),
             
             'execution_time': 5.0,
             'timestamp': datetime.now().isoformat()
@@ -569,6 +890,8 @@ class AccountStatusMonitor:
         logger.info(f"APcampaign projects monitored: {apcampaign_results.get('apcampaign_projects_monitored', 0)}")
         logger.info(f"APcampaign accounts became inactive: {apcampaign_results.get('apcampaign_newly_inactive_count', 0)}")
         logger.info(f"APcampaign projects reset: {apcampaign_results.get('apcampaign_projects_reset', 0)}")
+        logger.info(f"Non-matching projects checked: {non_matching_reset_results.get('checked', 0)}")
+        logger.info(f"Non-matching projects reset: {non_matching_reset_results.get('reset', 0)}")
         logger.info(f"APNews accounts monitored: {apnews_results.get('apnews_accounts_monitored', 0)}")
         logger.info(f"APNews inactive accounts: {apnews_results.get('apnews_inactive_count', 0)}")
         logger.info(f"APNews unknown accounts: {apnews_results.get('apnews_unknown_count', 0)}")
@@ -598,11 +921,13 @@ def main():
     apcampaign_projects = monitor.get_apcampaign_project_mapping()
     logger.info(f"Found {len(apcampaign_projects)} APcampaign projects")
     
+
     # Run complete comprehensive monitoring
     logger.info("Running comprehensive monitoring (Auto Mode + APcampaign)...")
     results = monitor.monitor_status_changes()
+    # Reset all non-matching projects to manual mode (0,0)
+    monitor.reset_non_matching_projects_to_manual()
     logger.info("Comprehensive monitoring complete!")
-    
     return results
 
 if __name__ == "__main__":
